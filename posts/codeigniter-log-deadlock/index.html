@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+  <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=443&amp;path=livereload" data-no-instant defer></script>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    
+    <title>CodeIgniter Log Deadlock | Leon 的博客</title>
+    <meta name="viewport" content="width=device-width,minimum-scale=1">
+    <meta name="description" content="案发 收到运维通报有一个站点响应很慢，甚至请求大量失败。
+此前因为分区满了导致服务异常，清理出空间后，其他服务都恢复了正常，唯独 web 服务例外。
+分析 浏览器端查看请求耗时，发现只有涉及 php 的请求有问题。
+服务端查看 php-fpm 进程，数量达到了pm.max_children 的上限，fmp 日志如下：
+[30-Mar-2024 17:41:09] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 8 children, there are 0 idle, and 12 total children [30-Mar-2024 17:41:10] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 16 children, there are 0 idle, and 17 total children [30-Mar-2024 17:41:11] WARNING: [pool www] seems busy (you may need to increase pm.">
+    <meta name="generator" content="Hugo 0.124.0">
+    
+    
+    
+    
+      <meta name="robots" content="noindex, nofollow">
+    
+
+    
+<link rel="stylesheet" href="/ananke/css/main.min.css" >
+
+
+
+    
+
+    
+      
+
+    
+
+    
+
+    
+      <link rel="canonical" href="https://tanlanxing.github.io:443/posts/codeigniter-log-deadlock/">
+    
+
+    <meta property="og:title" content="CodeIgniter Log Deadlock" />
+<meta property="og:description" content="案发 收到运维通报有一个站点响应很慢，甚至请求大量失败。
+此前因为分区满了导致服务异常，清理出空间后，其他服务都恢复了正常，唯独 web 服务例外。
+分析 浏览器端查看请求耗时，发现只有涉及 php 的请求有问题。
+服务端查看 php-fpm 进程，数量达到了pm.max_children 的上限，fmp 日志如下：
+[30-Mar-2024 17:41:09] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 8 children, there are 0 idle, and 12 total children [30-Mar-2024 17:41:10] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 16 children, there are 0 idle, and 17 total children [30-Mar-2024 17:41:11] WARNING: [pool www] seems busy (you may need to increase pm." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://tanlanxing.github.io:443/posts/codeigniter-log-deadlock/" /><meta property="article:section" content="posts" />
+<meta property="article:published_time" content="2024-04-06T21:03:49+08:00" />
+<meta property="article:modified_time" content="2024-04-06T21:03:49+08:00" />
+<meta itemprop="name" content="CodeIgniter Log Deadlock">
+<meta itemprop="description" content="案发 收到运维通报有一个站点响应很慢，甚至请求大量失败。
+此前因为分区满了导致服务异常，清理出空间后，其他服务都恢复了正常，唯独 web 服务例外。
+分析 浏览器端查看请求耗时，发现只有涉及 php 的请求有问题。
+服务端查看 php-fpm 进程，数量达到了pm.max_children 的上限，fmp 日志如下：
+[30-Mar-2024 17:41:09] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 8 children, there are 0 idle, and 12 total children [30-Mar-2024 17:41:10] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 16 children, there are 0 idle, and 17 total children [30-Mar-2024 17:41:11] WARNING: [pool www] seems busy (you may need to increase pm."><meta itemprop="datePublished" content="2024-04-06T21:03:49+08:00" />
+<meta itemprop="dateModified" content="2024-04-06T21:03:49+08:00" />
+<meta itemprop="wordCount" content="1707">
+<meta itemprop="keywords" content="PHP,CodeIgniter,deadlock," /><meta name="twitter:card" content="summary"/><meta name="twitter:title" content="CodeIgniter Log Deadlock"/>
+<meta name="twitter:description" content="案发 收到运维通报有一个站点响应很慢，甚至请求大量失败。
+此前因为分区满了导致服务异常，清理出空间后，其他服务都恢复了正常，唯独 web 服务例外。
+分析 浏览器端查看请求耗时，发现只有涉及 php 的请求有问题。
+服务端查看 php-fpm 进程，数量达到了pm.max_children 的上限，fmp 日志如下：
+[30-Mar-2024 17:41:09] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 8 children, there are 0 idle, and 12 total children [30-Mar-2024 17:41:10] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 16 children, there are 0 idle, and 17 total children [30-Mar-2024 17:41:11] WARNING: [pool www] seems busy (you may need to increase pm."/>
+
+	
+  </head>
+
+  <body class="ma0 avenir bg-near-white">
+
+    
+   
+  
+
+  <header>
+    <div class="bg-black">
+      <nav class="pv3 ph3 ph4-ns" role="navigation">
+  <div class="flex-l justify-between items-center center">
+    <a href="/" class="f3 fw2 hover-white no-underline white-90 dib">
+      
+        Leon 的博客
+      
+    </a>
+    <div class="flex-l items-center">
+      
+
+      
+      
+<div class="ananke-socials">
+  
+</div>
+
+    </div>
+  </div>
+</nav>
+
+    </div>
+  </header>
+
+
+
+    <main class="pb7" role="main">
+      
+  
+  <article class="flex-l flex-wrap justify-between mw8 center ph3">
+    <header class="mt4 w-100">
+      <aside class="instapaper_ignoref b helvetica tracked ttu">
+          
+        Posts
+      </aside>
+      
+
+
+
+
+
+
+
+
+
+
+  <div id="sharing" class="mt3 ananke-socials">
+    
+  </div>
+
+
+      <h1 class="f1 athelas mt3 mb1">CodeIgniter Log Deadlock</h1>
+      
+      
+      
+      <time class="f6 mv4 dib tracked" datetime="2024-04-06T21:03:49+08:00">April 6, 2024</time>
+      
+
+      
+      
+    </header>
+    <div class="nested-copy-line-height lh-copy serif f4 nested-links mid-gray pr4-l w-two-thirds-l"><h2 id="案发">案发</h2>
+<p>收到运维通报有一个站点响应很慢，甚至请求大量失败。</p>
+<p>此前因为分区满了导致服务异常，清理出空间后，其他服务都恢复了正常，唯独 web 服务例外。</p>
+<h2 id="分析">分析</h2>
+<p>浏览器端查看请求耗时，发现只有涉及 <code>php</code> 的请求有问题。</p>
+<p>服务端查看<code> php-fpm</code> 进程，数量达到了<code>pm.max_children</code> 的上限，<code>fmp</code> 日志如下：</p>
+<pre tabindex="0"><code>[30-Mar-2024 17:41:09] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 8 children, there are 0 idle, and 12 total children
+[30-Mar-2024 17:41:10] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 16 children, there are 0 idle, and 17 total children
+[30-Mar-2024 17:41:11] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 32 children, there are 2 idle, and 22 total children
+[30-Mar-2024 17:43:25] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 8 children, there are 0 idle, and 32 total children
+[30-Mar-2024 17:43:26] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 16 children, there are 0 idle, and 37 total children
+[30-Mar-2024 17:43:27] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 32 children, there are 2 idle, and 42 total children
+[30-Mar-2024 17:45:40] WARNING: [pool www] server reached pm.max_children setting (50), consider raising it
+</code></pre><p><code>php-fpm</code>进程已经打满。</p>
+<p>挑一个 <code>php-fpm</code> <code>worker</code> 进程，追踪显示阻塞在<code> flock</code> 系统调用上。</p>
+<p><img src="/images/posts/php/CodeIgniter-log-deadlock/image-20240330175944731.png" alt="image-20240330175944731"></p>
+<p>对应的文件是日志文件，也就是说在写日志前对日志文件加锁阻塞，锁有竞争。</p>
+<p>排查所有 <code>php-fpm</code> 进程，都是阻塞在这里。</p>
+<p>这就很诡异，大家都在等锁，那到底谁在持有它呢？</p>
+<p>Linux 系统中 <code>/proc/locks</code> 中记录了文件锁的情况，可以找到具体哪个进程持有了锁。先找到日志文件的inode：</p>
+<pre tabindex="0"><code># ls -i /var/www/mlcloud/writable/logs/log-2024-03-30.log
+53949 /var/www/mlcloud/writable/logs/log-2024-03-30.log
+</code></pre><p>过滤一下 <code>/proc/locks</code></p>
+<pre tabindex="0"><code># cat /proc/locks|grep 53949
+17: FLOCK  ADVISORY  WRITE 17751 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 17228 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 17705 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 17658 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 17809 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18068 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18070 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18071 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18073 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18072 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18075 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18074 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18080 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18079 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18083 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18081 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18082 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18095 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18094 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18093 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18963 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18123 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18121 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18122 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 18145 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19269 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19271 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19272 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19274 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19276 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19277 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19275 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19282 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19280 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19281 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19283 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19284 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19293 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19294 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19295 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19298 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19296 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19300 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19297 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 20251 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 20253 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 20259 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 17751 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 19299 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 20258 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 20252 08:03:53949 0 EOF
+</code></pre><p>持有锁的进程为 <code>17751</code></p>
+<pre tabindex="0"><code># ps -ef|grep 17751
+www      17751 28351  0 17:40 ?        00:00:00 php-fpm: pool www
+</code></pre><p>是 <code>php-fmp</code> 进程。上面说到所有的 <code>php-fmp</code>进程都阻塞在flock上，包括 <code>17751</code>:</p>
+<p><img src="/images/posts/php/CodeIgniter-log-deadlock/image-20240330181509924.png" alt="image-20240330181509924"></p>
+<p>从 <code>/proc/locks</code> 中可以更直观的看到它已经持有了锁，但又再次申请锁</p>
+<pre tabindex="0"><code># cat /proc/locks|grep 53949|grep 17751
+17: FLOCK  ADVISORY  WRITE 17751 08:03:53949 0 EOF
+17: -&gt; FLOCK  ADVISORY  WRITE 17751 08:03:53949 0 EOF
+</code></pre><p>它为什么会这么做呢？得看一下源码。</p>
+<p>这个项目使用的是 <code>CodeIgniter 4</code>，<code>flock</code> 调用位于<code>CodeIgniter\Log\Handlers\FileHandler::handle</code> 方法中,代码如下（省略了部分内容）</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-php" data-lang="php"><span style="display:flex;"><span>    <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">76</span>     <span style="color:#66d9ef">public</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">handle</span>($level, $message)<span style="color:#f92672">:</span> <span style="color:#a6e22e">bool</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">77</span>     {
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">78</span>         $filepath <span style="color:#f92672">=</span> $this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">path</span> <span style="color:#f92672">.</span> <span style="color:#e6db74">&#39;log-&#39;</span> <span style="color:#f92672">.</span> <span style="color:#a6e22e">date</span>(<span style="color:#e6db74">&#39;Y-m-d&#39;</span>) <span style="color:#f92672">.</span> <span style="color:#e6db74">&#39;.&#39;</span> <span style="color:#f92672">.</span> $this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">fileExtension</span>;
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">79</span> 
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">80</span>         $msg <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;&#39;</span>;
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">81</span> 
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">82</span>         <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span> <span style="color:#a6e22e">is_file</span>($filepath))
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">83</span>         {
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">84</span>             $newfile <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">85</span> 
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">86</span>             <span style="color:#75715e">// Only add protection to php files
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span> <span style="color:#ae81ff">87</span>             <span style="color:#66d9ef">if</span> ($this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">fileExtension</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;php&#39;</span>)
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">88</span>             {
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">89</span>                 $msg <span style="color:#f92672">.=</span> <span style="color:#e6db74">&#34;&lt;?php defined(&#39;SYSTEMPATH&#39;) || exit(&#39;No direct script access allowed    &#39;); ?&gt;</span><span style="color:#ae81ff">\n\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">90</span>             }
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">91</span>         }
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">92</span> 
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">93</span>         <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span> $fp <span style="color:#f92672">=</span> <span style="color:#f92672">@</span><span style="color:#a6e22e">fopen</span>($filepath, <span style="color:#e6db74">&#39;ab&#39;</span>))
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">94</span>         {
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">95</span>             <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">96</span>         }
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">119</span>         <span style="color:#a6e22e">flock</span>($fp, <span style="color:#a6e22e">LOCK_EX</span>);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">120</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">121</span>         <span style="color:#66d9ef">for</span> ($written <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>, $length <span style="color:#f92672">=</span> <span style="color:#a6e22e">strlen</span>($msg); $written <span style="color:#f92672">&lt;</span> $length; $written <span style="color:#f92672">+=</span> $result)
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">122</span>         {
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">123</span>             <span style="color:#66d9ef">if</span> (($result <span style="color:#f92672">=</span> <span style="color:#a6e22e">fwrite</span>($fp, <span style="color:#a6e22e">substr</span>($msg, $written))) <span style="color:#f92672">===</span> <span style="color:#66d9ef">false</span>)
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">124</span>             {
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">125</span>                 <span style="color:#75715e">// if we get this far, we&#39;ll never see this during travis-ci
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">126</span>                 <span style="color:#75715e">// @codeCoverageIgnoreStart
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">127</span>                 <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">128</span>                 <span style="color:#75715e">// @codeCoverageIgnoreEnd
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">129</span>             }
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">130</span>         }
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">131</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">132</span>         <span style="color:#a6e22e">flock</span>($fp, <span style="color:#a6e22e">LOCK_UN</span>);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">133</span>         <span style="color:#a6e22e">fclose</span>($fp);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">134</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">135</span>         <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isset</span>($newfile) <span style="color:#f92672">&amp;&amp;</span> $newfile <span style="color:#f92672">===</span> <span style="color:#66d9ef">true</span>)
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">136</span>         {
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">137</span>             <span style="color:#a6e22e">chmod</span>($filepath, $this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">filePermissions</span>);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">138</span>         }
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">139</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">140</span>         <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">is_int</span>($result); <span style="color:#75715e">// @phpstan-ignore-line
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">141</span>     }
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">....</span>
+</span></span></code></pre></div><p>按照正常的执行流程，<code>flock($fp, LOCK_UN);</code> 一定会在<code>flock($fp, LOCK_EX);</code> 之后执行，文件最终也会关闭。查看 <code>17751</code>打开文件的情况：</p>
+<pre tabindex="0"><code># lsof -p 17751|grep log-2024-03-30.log
+php-fpm 17751  www  105wW  REG       8,3 687800320     53949 /var/www/mlcloud/writable/logs/log-2024-03-30.log
+php-fpm 17751  www  107wW  REG       8,3 687800320     53949 /var/www/mlcloud/writable/logs/log-2024-03-30.log
+# lsof -p 17658|grep log-2024-03-30.log
+php-fpm 17658  www  105w   REG       8,3 687800320     53949 /var/www/mlcloud/writable/logs/log-2024-03-30.log
+</code></pre><p>在对比其他进程发现，<code>17751</code>  进程打开了两次日志文件，也就是说</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-php" data-lang="php"><span style="display:flex;"><span>        <span style="color:#a6e22e">flock</span>($fp, <span style="color:#a6e22e">LOCK_UN</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">fclose</span>($fp);
+</span></span></code></pre></div><p>这两行代码都没有执行。<code>strace</code> 追踪 <code>php-fpm</code> 处理一个请求，以下是<code>flock</code> 申请锁、<code>fwrite</code> 的附近的追踪记录</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-tex" data-lang="tex"><span style="display:flex;"><span>...
+</span></span><span style="display:flex;"><span>820 17:27:29.131451 mmap(NULL, 2097152, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) =     0x7fd726800000
+</span></span><span style="display:flex;"><span>821 17:27:29.131973 flock(4&lt;/var/www/mlcloud/writable/logs/log-2024-04-01.log&gt;, LOCK_EX) = 0
+</span></span><span style="display:flex;"><span>822 17:27:29.132031 write(4&lt;/var/www/mlcloud/writable/logs/log-2024-04-01.log&gt;, &#34;[ERROR] [2024-04    -01 17:27:29.129937] [server:192.168.8.95] [client:192.168.0.36] [PID:17018] -&gt; Array<span style="color:#66d9ef">\n</span>(<span style="color:#66d9ef">\n</span>        [0] =&gt; Array<span style="color:#66d9ef">\n</span>        (<span style="color:#66d9ef">\n</span>            [file] =&gt; /var/www/mlcloud/system/CodeIgniter.php<span style="color:#66d9ef">\n</span>                [line] =&gt; 936<span style="color:#66d9ef">\n</span>            [function] =&gt; index<span style="color:#66d9ef">\n</span>            [class] =&gt; App<span style="color:#66d9ef">\\</span>Controlle    rs<span style="color:#66d9ef">\\</span>Api<span style="color:#66d9ef">\\</span>Appfile<span style="color:#66d9ef">\\</span>Test<span style="color:#66d9ef">\n</span>            [object] =&gt; App<span style="color:#66d9ef">\\</span>Controllers<span style="color:#66d9ef">\\</span>Api<span style="color:#66d9ef">\\</span>Appfile<span style="color:#66d9ef">\\</span>Test Object<span style="color:#66d9ef">\n</span>                    (<span style="color:#66d9ef">\n</span>                    [readMethods:protected] =&gt; Array<span style="color:#66d9ef">\n</span>                            (<span style="color:#66d9ef">\n</span>                            [0] =&gt; resume<span style="color:#66d9ef">\n</span>                            [1] =&gt; download    <span style="color:#66d9ef">\n</span>                            [2] =&gt; delete<span style="color:#66d9ef">\n</span>                            [3] =&gt; mount<span style="color:#66d9ef">\n</span>                            )<span style="color:#66d9ef">\n\n</span>                    [writeMethods:protected] =&gt; Array<span style="color:#66d9ef">\n</span>                            (<span style="color:#66d9ef">\n</span>                            [0] =&gt; setSla<span style="color:#66d9ef">\n</span>                            [1] =&gt; dis    patch<span style="color:#66d9ef">\n</span>                            [2] =&gt; mount<span style="color:#66d9ef">\n</span>                        )<span style="color:#66d9ef">\n\n</span>                        [helpers:protected] =&gt; Array<span style="color:#66d9ef">\n</span>                        (<span style="color:#66d9ef">\n</span>                            [0]     =&gt; array<span style="color:#66d9ef">\n</span>          &#34;..., 8192) = -1 ENOSPC (No space left on device)
+</span></span><span style="display:flex;"><span>823 17:27:29.132464 stat(&#34;/var/www/mlcloud/writable/logs/log-2024-04-01.log&#34;, {st_mode=S_IFREG|06    44, st_size=28901376, ...}) = 0
+</span></span><span style="display:flex;"><span>824 17:27:29.132532 open(&#34;/var/www/mlcloud/writable/logs/log-2024-04-01.log&#34;, O_WRONLY|O_CREAT|O_    APPEND, 0666) = 6&lt;/var/www/mlcloud/writable/logs/log-2024-04-01.log&gt;
+</span></span><span style="display:flex;"><span>825 17:27:29.132586 fstat(6&lt;/var/www/mlcloud/writable/logs/log-2024-04-01.log&gt;, {st_mode=S_IFREG|    0644, st_size=28901376, ...}) = 0
+</span></span><span style="display:flex;"><span>826 17:27:29.132629 lseek(6&lt;/var/www/mlcloud/writable/logs/log-2024-04-01.log&gt;, 0, SEEK_CUR) = 0
+</span></span><span style="display:flex;"><span>827 17:27:29.132670 lseek(6&lt;/var/www/mlcloud/writable/logs/log-2024-04-01.log&gt;, 0, SEEK_CUR) = 0
+</span></span><span style="display:flex;"><span>828 17:27:29.132787 flock(6&lt;/var/www/mlcloud/writable/logs/log-2024-04-01.log&gt;, LOCK_EX &lt;detached     ...&gt;
+</span></span><span style="display:flex;"><span>~                                                                                                
+</span></span><span style="display:flex;"><span>~                                                                                                
+</span></span><span style="display:flex;"><span>~                                                                                                
+</span></span><span style="display:flex;"><span>~                                                                                                
+</span></span><span style="display:flex;"><span>~                                                                                                
+</span></span><span style="display:flex;"><span>                                                                               828,1         Bot
+</span></span></code></pre></div><p>根据写的目标文件及内容，可以确定<code>822</code> 行<code> write</code> 系统调用对应到 <code>php</code> 源码中<code>123</code> 行的<code>fwrite</code>，<code>write</code>失败了（错误提示为 “ENOSPC (No space left on device)“）意味着<code>fwrite</code>失败了。正常来讲，<code>fwrite</code> 失败后应循环结束，然后 <code>flock</code> 释放锁并关闭文件。但追踪记录显示紧接着又打开了日志文件，并再次申请锁，没有按照既定的流程执行 。<code>fwrite</code> 触发执行了某个特定的流程！</p>
+<p>需要追踪 <code>php</code> 层具体发生了什么，这里使用了 <code>phptrace</code></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-tex" data-lang="tex"><span style="display:flex;"><span>20428 [pid 16468]                                &gt; substr(&#34;[ERROR] [2024-04-01 17:22:15.885&#34;...,       0) called at [/var/www/mlcloud/system/Log/Handlers/FileHandler.php:123]
+</span></span><span style="display:flex;"><span>20429 [pid 16468]                                &lt; substr(&#34;[ERROR] [2024-04-01 17:22:15.885&#34;...,       0) = &#34;[ERROR] [2024-04-01 17:22:15.885&#34;... called at [/var/www/mlcloud/system/Log/Handlers/      FileHandler.php:123] ~ 0.000s 0.000s
+</span></span><span style="display:flex;"><span>20430 [pid 16468]                                &gt; fwrite(resource(stream)#115, &#34;[ERROR] [2024-04      -01 17:22:15.885&#34;...) called at [/var/www/mlcloud/system/Log/Handlers/FileHandler.php:123]
+</span></span><span style="display:flex;"><span>20431 [pid 16468]                                    &gt; CodeIgniter<span style="color:#66d9ef">\Debug\Exceptions</span>-&gt;errorHandler      (8, &#34;fwrite(): write of 8192 bytes fa&#34;..., &#34;/var/www/mlcloud/system/Log/Hand&#34;..., 123, arra      y(10)) called at [/var/www/mlcloud/system/Log/Handlers/FileHandler.php:123]
+</span></span><span style="display:flex;"><span>20432 [pid 16468]                                        &gt; error_reporting() called at [/var/www/      mlcloud/system/Debug/Exceptions.php:170]
+</span></span><span style="display:flex;"><span>20433 [pid 16468]                                        &lt; error_reporting() = -1 called at [/var      /www/mlcloud/system/Debug/Exceptions.php:170] ~ 0.000s 0.000s
+</span></span><span style="display:flex;"><span>20434 [pid 16468]                                        &gt; ErrorException-&gt;__construct(&#34;fwrite():       write of 8192 bytes fa&#34;..., 0, 8, &#34;/var/www/mlcloud/system/Log/Hand&#34;..., 123) called at [/      var/www/mlcloud/system/Debug/Exceptions.php:176]
+</span></span><span style="display:flex;"><span>20435 [pid 16468]                                        &lt; ErrorException-&gt;__construct(&#34;fwrite():       write of 8192 bytes fa&#34;..., 0, 8, &#34;/var/www/mlcloud/system/Log/Hand&#34;..., 123) = NULL calle      d at [/var/www/mlcloud/system/Debug/Exceptions.php:176] ~ 0.000s 0.000s
+</span></span><span style="display:flex;"><span>20436 [pid 16468]                                    &lt; CodeIgniter<span style="color:#66d9ef">\Debug\Exceptions</span>-&gt;errorHandler      (8, &#34;fwrite(): write of 8192 bytes fa&#34;..., &#34;/var/www/mlcloud/system/Log/Hand&#34;..., 123, arra      y(10)) = {undef} called at [/var/www/mlcloud/system/Log/Handlers/FileHandler.php:123] ~ 0.0      00s 0.000s
+</span></span><span style="display:flex;"><span>20437 [pid 16468]                                &lt; fwrite(resource(stream)#115, &#34;[ERROR] [2024-04      -01 17:22:15.885&#34;...) = false called at [/var/www/mlcloud/system/Log/Handlers/FileHandler.p      hp:123] ~ 0.000s 0.000s
+</span></span><span style="display:flex;"><span>20438 [pid 16468]                            &lt; CodeIgniter<span style="color:#66d9ef">\Log\Handlers\FileHandler</span>-&gt;handle(&#34;erro      r&#34;, &#34;Array<span style="color:#66d9ef">\n</span>(<span style="color:#66d9ef">\n</span>    [0] =&gt; Array<span style="color:#66d9ef">\n</span>       &#34;...) = {undef} called at [/var/www/mlcloud/system/      Log/Logger.php:353] ~ 0.002s 0.001s
+</span></span></code></pre></div><p><code>20430、20431</code>两行记录显示 <code>fwrite</code> 执行失败后调用了 <code>CodeIgniter\Debug\Exceptions::errorHandler</code> 方法</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-php" data-lang="php"><span style="display:flex;"><span><span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">90</span>         <span style="color:#e6db74">/**
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 91          * Responsible for registering the error, exception and shutdown
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 92          * handling of our application.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 93          */</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">94</span>         <span style="color:#66d9ef">public</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">initialize</span>()
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">95</span>         {
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">96</span>                 <span style="color:#75715e">//Set the Exception Handler
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span> <span style="color:#ae81ff">97</span>                 <span style="color:#a6e22e">set_exception_handler</span>([$this, <span style="color:#e6db74">&#39;exceptionHandler&#39;</span>]);
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">98</span> 
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">99</span>                 <span style="color:#75715e">// Set the Error Handler
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">100</span>                 <span style="color:#a6e22e">set_error_handler</span>([$this, <span style="color:#e6db74">&#39;errorHandler&#39;</span>]);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">101</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">102</span>                 <span style="color:#75715e">// Set the handler for shutdown to catch Parse errors
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">103</span>                 <span style="color:#75715e">// Do we need this in PHP7?
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">104</span>                 <span style="color:#a6e22e">register_shutdown_function</span>([$this, <span style="color:#e6db74">&#39;shutdownHandler&#39;</span>]);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">105</span>         }
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">106</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">107</span>         <span style="color:#75715e">//--------------------------------------------------------------------
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">108</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">109</span>         <span style="color:#e6db74">/**
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">110          * Catches any uncaught errors and exceptions, including most Fatal errors
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">111          * (Yay PHP7!). Will log the error, display it if display_errors is on,
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">112          * and fire an event that allows custom actions to be taken at this point.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">113          *
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">114          * @param Throwable $exception
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">115          *
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">116          * @codeCoverageIgnore
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">117          */</span>
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">118</span>         <span style="color:#66d9ef">public</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">exceptionHandler</span>(<span style="color:#a6e22e">Throwable</span> $exception)
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">119</span>         {
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">120</span>                 [
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">121</span>                         $statusCode,
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">122</span>                         $exitCode,
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">123</span>                 ] <span style="color:#f92672">=</span> $this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">determineCodes</span>($exception);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">124</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">125</span>                 <span style="color:#75715e">// Log it
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">126</span>                 <span style="color:#66d9ef">if</span> ($this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">config</span><span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">log</span> <span style="color:#f92672">===</span> <span style="color:#66d9ef">true</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#f92672">!</span> <span style="color:#a6e22e">in_array</span>($statusCode, $this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">config</span><span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">ign</span>    <span style="color:#a6e22e">oreCodes</span>, <span style="color:#66d9ef">true</span>))
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">127</span>                 {
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">128</span>                         <span style="color:#a6e22e">log_message</span>(<span style="color:#e6db74">&#39;critical&#39;</span>, $exception<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">getMessage</span>() <span style="color:#f92672">.</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">{trace}&#34;</span>, [
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">129</span>                 <span style="color:#e6db74">&#39;trace&#39;</span> <span style="color:#f92672">=&gt;</span> $exception<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">__toString</span>()
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">130</span>             ]);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">131</span>                 }
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">132</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">133</span>                 <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span> <span style="color:#a6e22e">is_cli</span>())
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">134</span>                 {
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">135</span>                         $this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">response</span><span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">setStatusCode</span>($statusCode);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">136</span>                         $header <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;HTTP/</span><span style="color:#e6db74">{</span>$this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">request</span><span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">getProtocolVersion</span>()<span style="color:#e6db74">}</span><span style="color:#e6db74"> </span><span style="color:#e6db74">{</span>$this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">respon</span>    <span style="color:#a6e22e">se</span><span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">getStatusCode</span>()<span style="color:#e6db74">}</span><span style="color:#e6db74"> </span><span style="color:#e6db74">{</span>$this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">response</span><span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">getReason</span>()<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">137</span>                         <span style="color:#a6e22e">header</span>($header, <span style="color:#66d9ef">true</span>, $statusCode);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">138</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">139</span>                         <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">strpos</span>($this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">request</span><span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">getHeaderLine</span>(<span style="color:#e6db74">&#39;accept&#39;</span>), <span style="color:#e6db74">&#39;text/html&#39;</span>) <span style="color:#f92672">===</span>     <span style="color:#66d9ef">false</span>)
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">140</span>                         {
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">141</span>                                 $this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">respond</span>($this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">collectVars</span>($exception, $statusCode)[<span style="color:#e6db74">&#39;m    essage&#39;</span>], $statusCode)<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">send</span>();
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">142</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">143</span>                                 <span style="color:#66d9ef">exit</span>($exitCode);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">144</span>                         }
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">144</span>                         }
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">145</span>                 }
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">146</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">147</span>                 $this<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">render</span>($exception, $statusCode);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">148</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">149</span>                 <span style="color:#66d9ef">exit</span>($exitCode);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">150</span>         }
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">151</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">152</span>         <span style="color:#75715e">//--------------------------------------------------------------------
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">153</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">154</span>         <span style="color:#e6db74">/**
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">155          * Even in PHP7, some errors make it through to the errorHandler, so
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">156          * convert these to Exceptions and let the exception handler log it and
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">157          * display it.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">158          *
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">159          * This seems to be primarily when a user triggers it with trigger_error().
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">160          *
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">161          * @param integer      $severity
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">162          * @param string       $message
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">163          * @param string|null  $file
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">164          * @param integer|null $line
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">165          *
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">166          * @throws ErrorException
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">167          */</span>
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">168</span>         <span style="color:#66d9ef">public</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">errorHandler</span>(<span style="color:#a6e22e">int</span> $severity, <span style="color:#a6e22e">string</span> $message, <span style="color:#a6e22e">string</span> $file <span style="color:#f92672">=</span> <span style="color:#66d9ef">null</span>, <span style="color:#a6e22e">int</span>     $line <span style="color:#f92672">=</span> <span style="color:#66d9ef">null</span>)
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">169</span>         {
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">170</span>                 <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span> (<span style="color:#a6e22e">error_reporting</span>() <span style="color:#f92672">&amp;</span> $severity))
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">171</span>                 {
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">172</span>                         <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">173</span>                 }
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">174</span> 
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">175</span>                 <span style="color:#75715e">// Convert it to an exception and pass it along.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#ae81ff">176</span>                 <span style="color:#66d9ef">throw</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">ErrorException</span>($message, <span style="color:#ae81ff">0</span>, $severity, $file, $line);
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">177</span>         }
+</span></span><span style="display:flex;"><span><span style="color:#f92672">...</span>
+</span></span></code></pre></div><p>CI 框架在初始化时将<code>CodeIgniter\Debug\Exceptions::exceptionHandler</code>注册为异常处理函数，同时将 <code>CodeIgniter\Debug\Exceptions::errorHandler</code> 注册为错误处理函数。<code>fwrite</code> 函数执行出错后错误处理函数被调用，此函数中抛出了异常，一直回溯到入口文件<code>index.php</code>都没有捕获这个异常，然后调用了注册的异常处理函数 ，异常处理函数中将异常信息记录到日志中，最终再次执行<code>CodeIgniter\Log\Handlers\FileHandler::handle</code>方法，打开日志文件、申请锁，因锁被自己持有而形成死锁！</p>
+<h2 id="结案">结案</h2>
+<p>现场处理比较简单，分区已经清理出空间了，杀掉形成死锁的 <code>php-fpm</code> <code>worker</code>进程就可以了。</p>
+<p>业务的异常应该就近捕获处理，框架或底层的异常应该在外层捕获，将简要的信息尽快反馈到服务调用方，避免错误一直在服务内部流转。</p>
+<p>针对这个问题，可以在入口文件index.php中捕获异常，构造简要错误信息直接返回给服务调用方，避免了异常处理函数调用而在此写日志。等调用方反馈异常后在分析调试。</p>
+<p><code>CodeIgniter\Log\Handlers\FileHandler::handle</code>中在fwrite失败后可以捕获异常，将异常转成不可处理的异常（如 FatalException）抛出，外层对此异常不再做其他尝试，直接终止处理返回。当然这样需要修改框架，需要慎重。</p>
+<p>PS：</p>
+<p>phptrace 是360在GitHub上开源的php追踪工具，感兴趣的可以到github上了解。不过从 2018年之后360不再维护，这里用的是  <a href="https://github.com/endrazine/phptrace">https://github.com/endrazine/phptrace</a> 这个fork自360 <code>phptrace</code>的项目，已经对<code>PHP8</code> 做了支持。</p>
+<ul class="pa0">
+  
+   <li class="list di">
+     <a href="/tags/php/" class="link f5 grow no-underline br-pill ba ph3 pv2 mb2 dib black sans-serif">PHP</a>
+   </li>
+  
+   <li class="list di">
+     <a href="/tags/codeigniter/" class="link f5 grow no-underline br-pill ba ph3 pv2 mb2 dib black sans-serif">CodeIgniter</a>
+   </li>
+  
+   <li class="list di">
+     <a href="/tags/deadlock/" class="link f5 grow no-underline br-pill ba ph3 pv2 mb2 dib black sans-serif">Deadlock</a>
+   </li>
+  
+</ul>
+<div class="mt6 instapaper_ignoref">
+      
+      
+      </div>
+    </div>
+
+    <aside class="w-30-l mt6-l">
+
+
+
+
+</aside>
+
+  </article>
+
+    </main>
+    <footer class="bg-black bottom-0 w-100 pa3" role="contentinfo">
+  <div class="flex justify-between">
+  <a class="f4 fw4 hover-white no-underline white-70 dn dib-ns pv2 ph3" href="https://tanlanxing.github.io:443/" >
+    &copy;  Leon 的博客 2024 
+  </a>
+    <div>
+<div class="ananke-socials">
+  
+</div>
+</div>
+  </div>
+</footer>
+
+  </body>
+</html>
