@@ -121,6 +121,36 @@
       
       <div class="blah w-100">
         <h1 class="f3 fw1 athelas mt0 lh-title">
+          <a href="/posts/thread-and-fork/" class="color-inherit dim link">
+            Thread and Fork
+            </a>
+        </h1>
+        <div class="f6 f5-l lh-copy nested-copy-line-height nested-links">
+          之前小伙伴在开发中引入了一个多线程fork的问题，今天复盘一下。
+背景 有一个 agent 服务，主进程启动后与调度服务建立一条 tcp 长连接，轮询调度服务通过这条连接下发的作业；主进程在接收到作业调度消息后，会拉起一个进程执行作业，自己则继续轮询作业消息。
+由于业务发展，需要在 agent 侧再对作业做一次调度，主要是对并发执行作业的控制。
+采用了在主进程增加一个调度线程的方案，主线程负责收作业消息，调度线程负责作业调度。
+在发布测试后，测试同学反馈作业下发后执行似乎卡住了。
+排查 为了便于说明，编写了一个简易的复现代码，后续的分析基于此代码。
+# -*- encoding: utf-8 -*- from concurrent_log_handler import ConcurrentRotatingFileHandler from multiprocessing import Process from six.moves.queue import Queue from threading import Thread import logging import os import re import sys import time def getroot(): &#34;&#34;&#34; get install root @return str &#34;&#34;&#34; exec_name = os.path.basename(sys.executable) if re.match(r&#39;python.*|py.*&#39;, exec_name): root = os.path.dirname(os.path.realpath(__file__)) else: root = os.path.dirname(sys.executable) return root def init_log(): &#34;&#34;&#34; :return: &#34;&#34;&#34; log_dir = getroot() if not os.
+        </div>
+          <a href="/posts/thread-and-fork/" class="ba b--moon-gray bg-light-gray br2 color-inherit dib f7 hover-bg-moon-gray link mt2 ph2 pv1">read more</a>
+        
+      </div>
+    </div>
+  </div>
+</article>
+
+          </div>
+        
+          <div class="relative w-100 mb4">
+            
+<article class="bb b--black-10">
+  <div class="db pv4 ph3 ph0-l no-underline dark-gray">
+    <div class="flex flex-column flex-row-ns">
+      
+      <div class="blah w-100">
+        <h1 class="f3 fw1 athelas mt0 lh-title">
           <a href="/posts/codeigniter-log-deadlock/" class="color-inherit dim link">
             CodeIgniter Log Deadlock
             </a>

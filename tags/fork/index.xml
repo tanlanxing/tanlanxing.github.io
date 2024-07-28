@@ -1,26 +1,19 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Posts on Leon 的博客</title>
-    <link>https://tanlanxing.github.io:443/posts/</link>
-    <description>Recent content in Posts on Leon 的博客</description>
+    <title>Fork on Leon 的博客</title>
+    <link>https://tanlanxing.github.io:443/tags/fork/</link>
+    <description>Recent content in Fork on Leon 的博客</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
     <lastBuildDate>Fri, 26 Jul 2024 21:59:44 +0800</lastBuildDate>
-    <atom:link href="https://tanlanxing.github.io:443/posts/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="https://tanlanxing.github.io:443/tags/fork/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Thread and Fork</title>
       <link>https://tanlanxing.github.io:443/posts/thread-and-fork/</link>
       <pubDate>Fri, 26 Jul 2024 21:59:44 +0800</pubDate>
       <guid>https://tanlanxing.github.io:443/posts/thread-and-fork/</guid>
       <description>之前小伙伴在开发中引入了一个多线程fork的问题，今天复盘一下。&#xA;背景 有一个 agent 服务，主进程启动后与调度服务建立一条 tcp 长连接，轮询调度服务通过这条连接下发的作业；主进程在接收到作业调度消息后，会拉起一个进程执行作业，自己则继续轮询作业消息。&#xA;由于业务发展，需要在 agent 侧再对作业做一次调度，主要是对并发执行作业的控制。&#xA;采用了在主进程增加一个调度线程的方案，主线程负责收作业消息，调度线程负责作业调度。&#xA;在发布测试后，测试同学反馈作业下发后执行似乎卡住了。&#xA;排查 为了便于说明，编写了一个简易的复现代码，后续的分析基于此代码。&#xA;# -*- encoding: utf-8 -*- from concurrent_log_handler import ConcurrentRotatingFileHandler from multiprocessing import Process from six.moves.queue import Queue from threading import Thread import logging import os import re import sys import time def getroot(): &amp;#34;&amp;#34;&amp;#34; get install root @return str &amp;#34;&amp;#34;&amp;#34; exec_name = os.path.basename(sys.executable) if re.match(r&amp;#39;python.*|py.*&amp;#39;, exec_name): root = os.path.dirname(os.path.realpath(__file__)) else: root = os.path.dirname(sys.executable) return root def init_log(): &amp;#34;&amp;#34;&amp;#34; :return: &amp;#34;&amp;#34;&amp;#34; log_dir = getroot() if not os.</description>
-    </item>
-    <item>
-      <title>CodeIgniter Log Deadlock</title>
-      <link>https://tanlanxing.github.io:443/posts/codeigniter-log-deadlock/</link>
-      <pubDate>Sat, 06 Apr 2024 21:03:49 +0800</pubDate>
-      <guid>https://tanlanxing.github.io:443/posts/codeigniter-log-deadlock/</guid>
-      <description>案发 收到运维通报有一个站点响应很慢，甚至请求大量失败。&#xA;此前因为分区满了导致服务异常，清理出空间后，其他服务都恢复了正常，唯独 web 服务例外。&#xA;分析 浏览器端查看请求耗时，发现只有涉及 php 的请求有问题。&#xA;服务端查看 php-fpm 进程，数量达到了pm.max_children 的上限，fmp 日志如下：&#xA;[30-Mar-2024 17:41:09] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 8 children, there are 0 idle, and 12 total children [30-Mar-2024 17:41:10] WARNING: [pool www] seems busy (you may need to increase pm.start_servers, or pm.min/max_spare_servers), spawning 16 children, there are 0 idle, and 17 total children [30-Mar-2024 17:41:11] WARNING: [pool www] seems busy (you may need to increase pm.</description>
     </item>
   </channel>
 </rss>

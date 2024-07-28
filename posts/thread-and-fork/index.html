@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+  <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=443&amp;path=livereload" data-no-instant defer></script>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    
+    <title>Thread and Fork | Leon 的博客</title>
+    <meta name="viewport" content="width=device-width,minimum-scale=1">
+    <meta name="description" content="之前小伙伴在开发中引入了一个多线程fork的问题，今天复盘一下。
+背景 有一个 agent 服务，主进程启动后与调度服务建立一条 tcp 长连接，轮询调度服务通过这条连接下发的作业；主进程在接收到作业调度消息后，会拉起一个进程执行作业，自己则继续轮询作业消息。
+由于业务发展，需要在 agent 侧再对作业做一次调度，主要是对并发执行作业的控制。
+采用了在主进程增加一个调度线程的方案，主线程负责收作业消息，调度线程负责作业调度。
+在发布测试后，测试同学反馈作业下发后执行似乎卡住了。
+排查 为了便于说明，编写了一个简易的复现代码，后续的分析基于此代码。
+# -*- encoding: utf-8 -*- from concurrent_log_handler import ConcurrentRotatingFileHandler from multiprocessing import Process from six.moves.queue import Queue from threading import Thread import logging import os import re import sys import time def getroot(): &#34;&#34;&#34; get install root @return str &#34;&#34;&#34; exec_name = os.path.basename(sys.executable) if re.match(r&#39;python.*|py.*&#39;, exec_name): root = os.path.dirname(os.path.realpath(__file__)) else: root = os.path.dirname(sys.executable) return root def init_log(): &#34;&#34;&#34; :return: &#34;&#34;&#34; log_dir = getroot() if not os.">
+    <meta name="generator" content="Hugo 0.124.0">
+    
+    
+    
+    
+      <meta name="robots" content="noindex, nofollow">
+    
+
+    
+<link rel="stylesheet" href="/ananke/css/main.min.css" >
+
+
+
+    
+
+    
+      
+
+    
+
+    
+
+    
+      <link rel="canonical" href="https://tanlanxing.github.io:443/posts/thread-and-fork/">
+    
+
+    <meta property="og:title" content="Thread and Fork" />
+<meta property="og:description" content="之前小伙伴在开发中引入了一个多线程fork的问题，今天复盘一下。
+背景 有一个 agent 服务，主进程启动后与调度服务建立一条 tcp 长连接，轮询调度服务通过这条连接下发的作业；主进程在接收到作业调度消息后，会拉起一个进程执行作业，自己则继续轮询作业消息。
+由于业务发展，需要在 agent 侧再对作业做一次调度，主要是对并发执行作业的控制。
+采用了在主进程增加一个调度线程的方案，主线程负责收作业消息，调度线程负责作业调度。
+在发布测试后，测试同学反馈作业下发后执行似乎卡住了。
+排查 为了便于说明，编写了一个简易的复现代码，后续的分析基于此代码。
+# -*- encoding: utf-8 -*- from concurrent_log_handler import ConcurrentRotatingFileHandler from multiprocessing import Process from six.moves.queue import Queue from threading import Thread import logging import os import re import sys import time def getroot(): &#34;&#34;&#34; get install root @return str &#34;&#34;&#34; exec_name = os.path.basename(sys.executable) if re.match(r&#39;python.*|py.*&#39;, exec_name): root = os.path.dirname(os.path.realpath(__file__)) else: root = os.path.dirname(sys.executable) return root def init_log(): &#34;&#34;&#34; :return: &#34;&#34;&#34; log_dir = getroot() if not os." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://tanlanxing.github.io:443/posts/thread-and-fork/" /><meta property="article:section" content="posts" />
+<meta property="article:published_time" content="2024-07-26T21:59:44+08:00" />
+<meta property="article:modified_time" content="2024-07-26T21:59:44+08:00" />
+<meta itemprop="name" content="Thread and Fork">
+<meta itemprop="description" content="之前小伙伴在开发中引入了一个多线程fork的问题，今天复盘一下。
+背景 有一个 agent 服务，主进程启动后与调度服务建立一条 tcp 长连接，轮询调度服务通过这条连接下发的作业；主进程在接收到作业调度消息后，会拉起一个进程执行作业，自己则继续轮询作业消息。
+由于业务发展，需要在 agent 侧再对作业做一次调度，主要是对并发执行作业的控制。
+采用了在主进程增加一个调度线程的方案，主线程负责收作业消息，调度线程负责作业调度。
+在发布测试后，测试同学反馈作业下发后执行似乎卡住了。
+排查 为了便于说明，编写了一个简易的复现代码，后续的分析基于此代码。
+# -*- encoding: utf-8 -*- from concurrent_log_handler import ConcurrentRotatingFileHandler from multiprocessing import Process from six.moves.queue import Queue from threading import Thread import logging import os import re import sys import time def getroot(): &#34;&#34;&#34; get install root @return str &#34;&#34;&#34; exec_name = os.path.basename(sys.executable) if re.match(r&#39;python.*|py.*&#39;, exec_name): root = os.path.dirname(os.path.realpath(__file__)) else: root = os.path.dirname(sys.executable) return root def init_log(): &#34;&#34;&#34; :return: &#34;&#34;&#34; log_dir = getroot() if not os."><meta itemprop="datePublished" content="2024-07-26T21:59:44+08:00" />
+<meta itemprop="dateModified" content="2024-07-26T21:59:44+08:00" />
+<meta itemprop="wordCount" content="799">
+<meta itemprop="keywords" content="Python,Thread,Fork," /><meta name="twitter:card" content="summary"/><meta name="twitter:title" content="Thread and Fork"/>
+<meta name="twitter:description" content="之前小伙伴在开发中引入了一个多线程fork的问题，今天复盘一下。
+背景 有一个 agent 服务，主进程启动后与调度服务建立一条 tcp 长连接，轮询调度服务通过这条连接下发的作业；主进程在接收到作业调度消息后，会拉起一个进程执行作业，自己则继续轮询作业消息。
+由于业务发展，需要在 agent 侧再对作业做一次调度，主要是对并发执行作业的控制。
+采用了在主进程增加一个调度线程的方案，主线程负责收作业消息，调度线程负责作业调度。
+在发布测试后，测试同学反馈作业下发后执行似乎卡住了。
+排查 为了便于说明，编写了一个简易的复现代码，后续的分析基于此代码。
+# -*- encoding: utf-8 -*- from concurrent_log_handler import ConcurrentRotatingFileHandler from multiprocessing import Process from six.moves.queue import Queue from threading import Thread import logging import os import re import sys import time def getroot(): &#34;&#34;&#34; get install root @return str &#34;&#34;&#34; exec_name = os.path.basename(sys.executable) if re.match(r&#39;python.*|py.*&#39;, exec_name): root = os.path.dirname(os.path.realpath(__file__)) else: root = os.path.dirname(sys.executable) return root def init_log(): &#34;&#34;&#34; :return: &#34;&#34;&#34; log_dir = getroot() if not os."/>
+
+	
+  </head>
+
+  <body class="ma0 avenir bg-near-white">
+
+    
+   
+  
+
+  <header>
+    <div class="bg-black">
+      <nav class="pv3 ph3 ph4-ns" role="navigation">
+  <div class="flex-l justify-between items-center center">
+    <a href="/" class="f3 fw2 hover-white no-underline white-90 dib">
+      
+        Leon 的博客
+      
+    </a>
+    <div class="flex-l items-center">
+      
+
+      
+      
+<div class="ananke-socials">
+  
+</div>
+
+    </div>
+  </div>
+</nav>
+
+    </div>
+  </header>
+
+
+
+    <main class="pb7" role="main">
+      
+  
+  <article class="flex-l flex-wrap justify-between mw8 center ph3">
+    <header class="mt4 w-100">
+      <aside class="instapaper_ignoref b helvetica tracked ttu">
+          
+        Posts
+      </aside>
+      
+
+
+
+
+
+
+
+
+
+
+  <div id="sharing" class="mt3 ananke-socials">
+    
+  </div>
+
+
+      <h1 class="f1 athelas mt3 mb1">Thread and Fork</h1>
+      
+      
+      
+      <time class="f6 mv4 dib tracked" datetime="2024-07-26T21:59:44+08:00">July 26, 2024</time>
+      
+
+      
+      
+    </header>
+    <div class="nested-copy-line-height lh-copy serif f4 nested-links mid-gray pr4-l w-two-thirds-l"><p>之前小伙伴在开发中引入了一个多线程fork的问题，今天复盘一下。</p>
+<h2 id="背景">背景</h2>
+<p>有一个 agent 服务，主进程启动后与调度服务建立一条 tcp 长连接，轮询调度服务通过这条连接下发的作业；主进程在接收到作业调度消息后，会拉起一个进程执行作业，自己则继续轮询作业消息。</p>
+<p>由于业务发展，需要在 agent 侧再对作业做一次调度，主要是对并发执行作业的控制。</p>
+<p>采用了在主进程增加一个调度线程的方案，主线程负责收作业消息，调度线程负责作业调度。</p>
+<p>在发布测试后，测试同学反馈作业下发后执行似乎卡住了。</p>
+<h2 id="排查">排查</h2>
+<p>为了便于说明，编写了一个简易的复现代码，后续的分析基于此代码。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># -*- encoding: utf-8 -*-</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> concurrent_log_handler <span style="color:#f92672">import</span> ConcurrentRotatingFileHandler
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> multiprocessing <span style="color:#f92672">import</span> Process
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> six.moves.queue <span style="color:#f92672">import</span> Queue
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> threading <span style="color:#f92672">import</span> Thread
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> logging
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> os
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> re
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> sys
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> time
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">getroot</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    get install root
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    @return str
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    exec_name <span style="color:#f92672">=</span> os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>basename(sys<span style="color:#f92672">.</span>executable)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> re<span style="color:#f92672">.</span><span style="color:#66d9ef">match</span>(<span style="color:#e6db74">r</span><span style="color:#e6db74">&#39;python.*|py.*&#39;</span>, exec_name):
+</span></span><span style="display:flex;"><span>        root <span style="color:#f92672">=</span> os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>dirname(os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>realpath(__file__))
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>        root <span style="color:#f92672">=</span> os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>dirname(sys<span style="color:#f92672">.</span>executable)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> root
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">init_log</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    :return:
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    log_dir <span style="color:#f92672">=</span> getroot()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">not</span> os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>exists(log_dir):
+</span></span><span style="display:flex;"><span>        os<span style="color:#f92672">.</span>makedirs(log_dir)
+</span></span><span style="display:flex;"><span>    log_file <span style="color:#f92672">=</span> os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>join(log_dir, <span style="color:#e6db74">&#39;run.log&#39;</span>)
+</span></span><span style="display:flex;"><span>    logger <span style="color:#f92672">=</span> logging<span style="color:#f92672">.</span>getLogger(<span style="color:#e6db74">&#39;log&#39;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># fh = RotatingFileHandler(log_file, &#34;a&#34;, 10 * 1024 * 1024, 5)</span>
+</span></span><span style="display:flex;"><span>    fh <span style="color:#f92672">=</span> ConcurrentRotatingFileHandler(log_file, <span style="color:#e6db74">&#34;a&#34;</span>, <span style="color:#ae81ff">10</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1024</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1024</span>, <span style="color:#ae81ff">5</span>, delay<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>    formatter <span style="color:#f92672">=</span> logging<span style="color:#f92672">.</span>Formatter(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#39;</span><span style="color:#e6db74">%(asctime)s</span><span style="color:#e6db74"> [</span><span style="color:#e6db74">%(filename)s</span><span style="color:#e6db74">:</span><span style="color:#e6db74">%(lineno)d</span><span style="color:#e6db74">] </span><span style="color:#e6db74">%(levelname)s</span><span style="color:#e6db74"> [PID:</span><span style="color:#e6db74">%(process)d</span><span style="color:#e6db74">.</span><span style="color:#e6db74">%(thread)d</span><span style="color:#e6db74">] - </span><span style="color:#e6db74">%(message)s</span><span style="color:#e6db74">&#39;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#39;%Y-%m-</span><span style="color:#e6db74">%d</span><span style="color:#e6db74"> %H:%M:%S&#39;</span>)
+</span></span><span style="display:flex;"><span>    fh<span style="color:#f92672">.</span>setFormatter(formatter)
+</span></span><span style="display:flex;"><span>    logger<span style="color:#f92672">.</span>addHandler(fh)
+</span></span><span style="display:flex;"><span>    logger<span style="color:#f92672">.</span>setLevel(<span style="color:#ae81ff">20</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> logger
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>log <span style="color:#f92672">=</span> init_log()
+</span></span><span style="display:flex;"><span>pidfile <span style="color:#f92672">=</span> os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>join(getroot(), <span style="color:#e6db74">&#39;test.pid&#39;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">job</span>(msg):
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>exists(pidfile):
+</span></span><span style="display:flex;"><span>        log<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#39;deal job: </span><span style="color:#e6db74">%s</span><span style="color:#e6db74">&#39;</span>, msg)
+</span></span><span style="display:flex;"><span>        time<span style="color:#f92672">.</span>sleep(<span style="color:#ae81ff">60</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">dispatcher</span>(q):
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>exists(pidfile):
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>            msg <span style="color:#f92672">=</span> q<span style="color:#f92672">.</span>get(<span style="color:#66d9ef">False</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>            msg <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#f92672">not</span> msg:
+</span></span><span style="display:flex;"><span>            time<span style="color:#f92672">.</span>sleep(<span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>        p <span style="color:#f92672">=</span> Process(target<span style="color:#f92672">=</span>job, args<span style="color:#f92672">=</span>(msg,))
+</span></span><span style="display:flex;"><span>        p<span style="color:#f92672">.</span>start()
+</span></span><span style="display:flex;"><span>        p<span style="color:#f92672">.</span>join()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">main</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> open(pidfile, <span style="color:#e6db74">&#39;w&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>        f<span style="color:#f92672">.</span>write(str(os<span style="color:#f92672">.</span>getpid()))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    queue <span style="color:#f92672">=</span> Queue()
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    t <span style="color:#f92672">=</span> Thread(target<span style="color:#f92672">=</span>dispatcher, args<span style="color:#f92672">=</span>(queue,))
+</span></span><span style="display:flex;"><span>    t<span style="color:#f92672">.</span>start()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> <span style="color:#66d9ef">True</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> queue<span style="color:#f92672">.</span>qsize() <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">10</span>:
+</span></span><span style="display:flex;"><span>                log<span style="color:#f92672">.</span>warning(<span style="color:#e6db74">&#39;queue full&#39;</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>                queue<span style="color:#f92672">.</span>put(<span style="color:#e6db74">&#39;msg: </span><span style="color:#e6db74">{}</span><span style="color:#e6db74">&#39;</span><span style="color:#f92672">.</span>format(i))
+</span></span><span style="display:flex;"><span>                log<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#39;receive job: </span><span style="color:#e6db74">%s</span><span style="color:#e6db74">&#39;</span>, i)
+</span></span><span style="display:flex;"><span>                i <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">KeyboardInterrupt</span>:
+</span></span><span style="display:flex;"><span>        os<span style="color:#f92672">.</span>remove(pidfile)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    t<span style="color:#f92672">.</span>join()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> __name__ <span style="color:#f92672">==</span> <span style="color:#e6db74">&#39;__main__&#39;</span>:
+</span></span><span style="display:flex;"><span>    main()
+</span></span></code></pre></div><p>运行环境是：centos 7 + python 2.7.12，日志写在机械硬盘上，写日志耗时高，锁冲突概率随之增加，容易复现。</p>
+<p><img src="/images/posts/python/thread-fork/image-20240727163251433.png" alt="image-20240727163251433"></p>
+<p>其中 20843 为主进程，20844 为主进程中的调度线程；</p>
+<p><img src="/images/posts/python/thread-fork/image-20240727163614534.png" alt="image-20240727163614534"></p>
+<p>主进程的主线程 20843 在正常跑，正在不停的打日志；</p>
+<p><img src="/images/posts/python/thread-fork/image-20240727163816836.png" alt="image-20240727163816836"></p>
+<p>调度线程阻塞在 wait 20845 上，也是正常的，它 join 了子进程；20845 为作业进程，堵塞在了 futex 系统调用上。</p>
+<p><img src="/images/posts/python/thread-fork/image-20240727155447738.png" alt="image-20240727155447738"></p>
+<p>观察其栈，初步判断是堵塞在锁等待上了。观察一下 python 的栈</p>
+<p><img src="/images/posts/python/thread-fork/image-20240727155819873.png" alt="image-20240727155819873"></p>
+<p>确如上面的判断，在写日志申请锁时阻塞了。</p>
+<p>仔细看的话，截图中还有一些额外的信息，待会再细说。</p>
+<p>代码中 logger handler 使用的是 concurrent_log_handler.ConcurrentRotatingFileHandler，它支持在多进程下安全的对日志进行切割。在写日志时，先获取一把线程锁，再获取一把文件锁。</p>
+<p>下面是线程锁类的部分代码：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">_RLock</span>(_Verbose):
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">125</span>     <span style="color:#e6db74">&#34;&#34;&#34;A reentrant lock must be released by the thread that acquired it. Once a
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 126        thread has acquired a reentrant lock, the same thread may acquire it
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 127        again without blocking; the thread must release it once for each time it
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 128        has acquired it.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 129     &#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">130</span> 
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">131</span>     <span style="color:#66d9ef">def</span> __init__(self, verbose<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>):
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">132</span>         _Verbose<span style="color:#f92672">.</span>__init__(self, verbose)
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">133</span>         self<span style="color:#f92672">.</span>__block <span style="color:#f92672">=</span> _allocate_lock()
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">134</span>         self<span style="color:#f92672">.</span>__owner <span style="color:#f92672">=</span> <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">135</span>         self<span style="color:#f92672">.</span>__count <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">136</span> 
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">137</span>     <span style="color:#66d9ef">def</span> __repr__(self):
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">138</span>         owner <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>__owner
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">139</span>         <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">140</span>             owner <span style="color:#f92672">=</span> _active[owner]<span style="color:#f92672">.</span>name
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">141</span>         <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">KeyError</span>:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">142</span>             <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">143</span>         <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;&lt;</span><span style="color:#e6db74">%s</span><span style="color:#e6db74"> owner=</span><span style="color:#e6db74">%r</span><span style="color:#e6db74"> count=</span><span style="color:#e6db74">%d</span><span style="color:#e6db74">&gt;&#34;</span> <span style="color:#f92672">%</span> (
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">144</span>                 self<span style="color:#f92672">.</span>__class__<span style="color:#f92672">.</span>__name__, owner, self<span style="color:#f92672">.</span>__count)
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">145</span> 
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">146</span>     <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">acquire</span>(self, blocking<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span>):
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">147</span>         <span style="color:#e6db74">&#34;&#34;&#34;Acquire a lock, blocking or non-blocking.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 148 
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 149         When invoked without arguments: if this thread already owns the lock,
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 150         increment the recursion level by one, and return immediately. Otherwise,
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 151         if another thread owns the lock, block until the lock is unlocked. Once
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 152         the lock is unlocked (not owned by any thread), then grab ownership, set
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 153         the recursion level to one, and return. If more than one thread is
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 154         blocked waiting until the lock is unlocked, only one at a time will be
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 155         able to grab ownership of the lock. There is no return value in this
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 156         case.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 157 
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 158         When invoked with the blocking argument set to true, do the same thing
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 159         as when called without arguments, and return true.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 160 
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 161         When invoked with the blocking argument set to false, do not block. If a
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 162         call without an argument would block, return false immediately;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 163         otherwise, do the same thing as when called without arguments, and
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 164         return true.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 165 
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 166         &#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">167</span>         me <span style="color:#f92672">=</span> _get_ident()
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">168</span>         <span style="color:#66d9ef">if</span> self<span style="color:#f92672">.</span>__owner <span style="color:#f92672">==</span> me:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">169</span>             self<span style="color:#f92672">.</span>__count <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>__count <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">170</span>             <span style="color:#66d9ef">if</span> __debug__:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">171</span>                 self<span style="color:#f92672">.</span>_note(<span style="color:#e6db74">&#34;</span><span style="color:#e6db74">%s</span><span style="color:#e6db74">.acquire(</span><span style="color:#e6db74">%s</span><span style="color:#e6db74">): recursive success&#34;</span>, self, blocking)
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">172</span>             <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">173</span>         rc <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>__block<span style="color:#f92672">.</span>acquire(blocking)
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">174</span>         <span style="color:#66d9ef">if</span> rc:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">175</span>             self<span style="color:#f92672">.</span>__owner <span style="color:#f92672">=</span> me
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">176</span>             self<span style="color:#f92672">.</span>__count <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">177</span>             <span style="color:#66d9ef">if</span> __debug__:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">178</span>                 self<span style="color:#f92672">.</span>_note(<span style="color:#e6db74">&#34;</span><span style="color:#e6db74">%s</span><span style="color:#e6db74">.acquire(</span><span style="color:#e6db74">%s</span><span style="color:#e6db74">): initial success&#34;</span>, self, blocking)
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">179</span>         <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">180</span>             <span style="color:#66d9ef">if</span> __debug__:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">181</span>                 self<span style="color:#f92672">.</span>_note(<span style="color:#e6db74">&#34;</span><span style="color:#e6db74">%s</span><span style="color:#e6db74">.acquire(</span><span style="color:#e6db74">%s</span><span style="color:#e6db74">): failure&#34;</span>, self, blocking)
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">182</span>         <span style="color:#66d9ef">return</span> rc
+</span></span><span style="display:flex;"><span><span style="color:#f92672">...</span>
+</span></span></code></pre></div><p>可以看到，它是一把 <code>可重入锁</code> ，难道还有其他线程在跟它竞争吗？</p>
+<p><img src="/images/posts/python/thread-fork/image-20240727164041997.png" alt="image-20240727164041997"></p>
+<p>只有一个线程，难道有线程获取锁后没有释放就退出了吗？</p>
+<p>trace 看一下，命令如下：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>strace -tt -ff -s <span style="color:#ae81ff">128</span> -y -o trace.log python thread_fork.py
+</span></span></code></pre></div><p><img src="/images/posts/python/thread-fork/image-20240728184332951.png" alt="image-20240728184332951"></p>
+<p>其中 3149 为主进程主线程，3150 为主进程调度线程，3151 为作业进程。</p>
+<p>搜索 trace 中创建线程（子进程）的系统调用只有两个，第一个 clone 是主进程创建调度线程；第二个 clone 是调度线程创建作业进程。也就是说作业进程没有创建其他线程，它就阻塞了。</p>
+<p>没有其他线程，那这个锁是被谁获取了呢？</p>
+<p>回到前面 python 栈的图，除了P20845;T20845（即作业进程的主线程）之外，还有一条 P20845;T20843 的记录。</p>
+<blockquote>
+<p>20843 是主进程的主线程，怎么会出现在作业进程里? 这似乎是 python2 实现上的缺陷，用 python3 运行 austin 就没有看到。不过好在有这条信息，否则还不好往正确的方向上想！</p>
+</blockquote>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span><span style="color:#75715e"># file: logging/__init__.py</span>
+</span></span><span style="display:flex;"><span>...
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">736</span>     def handle<span style="color:#f92672">(</span>self, record<span style="color:#f92672">)</span>:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">737</span>         <span style="color:#e6db74">&#34;&#34;&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 738         Conditionally emit the specified logging record.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 739 
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 740         Emission depends on filters which may have been added to the handler.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 741         Wrap the actual emission of the record with acquisition/release of
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 742         the I/O thread lock. Returns whether the filter passed the record for
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 743         emission.
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"> 744         &#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">745</span>         rv <span style="color:#f92672">=</span> self.filter<span style="color:#f92672">(</span>record<span style="color:#f92672">)</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">746</span>         <span style="color:#66d9ef">if</span> rv:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">747</span>             self.acquire<span style="color:#f92672">()</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">748</span>             try:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">749</span>                 self.emit<span style="color:#f92672">(</span>record<span style="color:#f92672">)</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">750</span>             finally:
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">751</span>                 self.release<span style="color:#f92672">()</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">752</span>         <span style="color:#66d9ef">return</span> rv
+</span></span><span style="display:flex;"><span> ...
+</span></span></code></pre></div><p>将栈和代码相印证: <code>logging/__init__.py</code> 747 行获取到锁后，调用<code>self.emit</code>方法。若此时 T20843 跟 T20845 在同一进程内，它持有着 T20845 等待的线程锁。</p>
+<h2 id="结论">结论</h2>
+<p>这个时候，脑子里闪过一道亮光：多线程fork！</p>
+<p>老老实实复习了一下 APUE 12.9 节，结论如下：</p>
+<p>主进程的调度线程在 fork 的那一刻，主进程的主线程正持有线程锁，fork 的子进程也拷贝了这个锁的状态。主进程的主线程在完成写日志后会释放锁，但子进程没有把主进程的主线程拷贝过来，没有线程去释放锁，所以就导致了死锁！</p>
+<p>加锁是因为要写日志，那去掉其中一个线程写日志的动作，应该不会出现死锁了。修改代码，去掉主进程主线程写日志代码，果然没有堵塞在锁等待上了：</p>
+<p><img src="/images/posts/python/thread-fork/image-20240728193500769.png" alt="image-20240728193500769"></p>
+<p>以下是更直观的复现这个场景的代码</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># -*- encoding: utf-8 -*-</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> multiprocessing <span style="color:#f92672">import</span> Process
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> threading <span style="color:#f92672">import</span> Thread, RLock
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>lock <span style="color:#f92672">=</span> RLock()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">job</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> lock:
+</span></span><span style="display:flex;"><span>        print(<span style="color:#e6db74">&#39;deal job&#39;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">dispatcher</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        p <span style="color:#f92672">=</span> Process(target<span style="color:#f92672">=</span>job)
+</span></span><span style="display:flex;"><span>        p<span style="color:#f92672">.</span>start()
+</span></span><span style="display:flex;"><span>        p<span style="color:#f92672">.</span>join()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>        print(e)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">main</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> lock:
+</span></span><span style="display:flex;"><span>        t <span style="color:#f92672">=</span> Thread(target<span style="color:#f92672">=</span>dispatcher)
+</span></span><span style="display:flex;"><span>        t<span style="color:#f92672">.</span>start()
+</span></span><span style="display:flex;"><span>        t<span style="color:#f92672">.</span>join()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> __name__ <span style="color:#f92672">==</span> <span style="color:#e6db74">&#39;__main__&#39;</span>:
+</span></span><span style="display:flex;"><span>    main()
+</span></span></code></pre></div><h2 id="解决方案">解决方案</h2>
+<p>既然多线程 fork 不行，那就用多进程！</p>
+<p>将调度线程改成调度进程， 问题解决。</p>
+<p>PS：</p>
+<p>排查过程中查看 python 调用栈用的是 austin(<a href="https://github.com/P403n1x87/austin">https://github.com/P403n1x87/austin</a>) 这个工具，非常好用， yyds！</p>
+<ul class="pa0">
+  
+   <li class="list di">
+     <a href="/tags/python/" class="link f5 grow no-underline br-pill ba ph3 pv2 mb2 dib black sans-serif">Python</a>
+   </li>
+  
+   <li class="list di">
+     <a href="/tags/thread/" class="link f5 grow no-underline br-pill ba ph3 pv2 mb2 dib black sans-serif">Thread</a>
+   </li>
+  
+   <li class="list di">
+     <a href="/tags/fork/" class="link f5 grow no-underline br-pill ba ph3 pv2 mb2 dib black sans-serif">Fork</a>
+   </li>
+  
+</ul>
+<div class="mt6 instapaper_ignoref">
+      
+      
+      </div>
+    </div>
+
+    <aside class="w-30-l mt6-l">
+
+
+
+
+</aside>
+
+  </article>
+
+    </main>
+    <footer class="bg-black bottom-0 w-100 pa3" role="contentinfo">
+  <div class="flex justify-between">
+  <a class="f4 fw4 hover-white no-underline white-70 dn dib-ns pv2 ph3" href="https://tanlanxing.github.io:443/" >
+    &copy;  Leon 的博客 2024 
+  </a>
+    <div>
+<div class="ananke-socials">
+  
+</div>
+</div>
+  </div>
+</footer>
+
+  </body>
+</html>
