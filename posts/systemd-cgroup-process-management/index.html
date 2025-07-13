@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+  <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=443&amp;path=livereload" data-no-instant defer></script>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    
+    <title>Systemd Cgroup Process Management | Leon 的博客</title>
+    <meta name="viewport" content="width=device-width,minimum-scale=1">
+    <meta name="description" content="0.背景知识 cgroup cgroup (Control Group) 是 linux 内核提供的一种机制，这种机制可以根据需求把一系列系统任务及其子任务整合(或分隔)到按资源划分等级的不同组内，从而为系统资源管理提供一个统一的框架。简单说，cgroup 可以限制、记录任务组所使用的物理资源。本质上来说，cgroup 是内核附加在程序上的一系列钩子(hook)，通过程序运行时对资源的调度触发相应的钩子以达到资源追踪和限制的目的。容器所依赖的基础之一就是 cgroup，本文不做展开。
+cgroup 的设置有 3 种接口
+接口文件
+通过在挂载的 cgroup 文件系统中创建目录、文件，以及往可写文件中写入配置来实现
+cgroup 工具：cgroup-bin
+$ sudo apt install cgroup-bin $ cgexe --help systemd systemd systemd 是目前绝大多数主流 Linux 发行版的默认初始化系统，用于 Linux 系统和服务管理器，替代 initd。systemd 使用 cgroup 的层级关系来管理进程，同时 systemd 提供了 cgroups 的使用和管理接口。
+1.问题的引出 公司产品包含一个 agent 服务，运行在客户主机上。agent 实现了自动升级机制。
+Linux 下的实现如下：
+agent 服务启动升级进程 upgrade upgrade 进程通过 fork 脱离 agent 服务进程 upgrade 进程停止 agent 服务 upgrade 进程更新 agent 程序文件 upgrade 进程启动 agent 服务 upgrade 进程退出 这套机制在 Linux 下一直正常运行着。最近反馈较高概率会出现升级失败，同时伴随着 agent 离线。">
+    <meta name="generator" content="Hugo 0.124.0">
+    
+    
+    
+    
+      <meta name="robots" content="noindex, nofollow">
+    
+
+    
+<link rel="stylesheet" href="/ananke/css/main.min.css" >
+
+
+
+    
+
+    
+      
+
+    
+
+    
+
+    
+      <link rel="canonical" href="https://tanlanxing.github.io:443/posts/systemd-cgroup-process-management/">
+    
+
+    <meta property="og:title" content="Systemd Cgroup Process Management" />
+<meta property="og:description" content="0.背景知识 cgroup cgroup (Control Group) 是 linux 内核提供的一种机制，这种机制可以根据需求把一系列系统任务及其子任务整合(或分隔)到按资源划分等级的不同组内，从而为系统资源管理提供一个统一的框架。简单说，cgroup 可以限制、记录任务组所使用的物理资源。本质上来说，cgroup 是内核附加在程序上的一系列钩子(hook)，通过程序运行时对资源的调度触发相应的钩子以达到资源追踪和限制的目的。容器所依赖的基础之一就是 cgroup，本文不做展开。
+cgroup 的设置有 3 种接口
+接口文件
+通过在挂载的 cgroup 文件系统中创建目录、文件，以及往可写文件中写入配置来实现
+cgroup 工具：cgroup-bin
+$ sudo apt install cgroup-bin $ cgexe --help systemd systemd systemd 是目前绝大多数主流 Linux 发行版的默认初始化系统，用于 Linux 系统和服务管理器，替代 initd。systemd 使用 cgroup 的层级关系来管理进程，同时 systemd 提供了 cgroups 的使用和管理接口。
+1.问题的引出 公司产品包含一个 agent 服务，运行在客户主机上。agent 实现了自动升级机制。
+Linux 下的实现如下：
+agent 服务启动升级进程 upgrade upgrade 进程通过 fork 脱离 agent 服务进程 upgrade 进程停止 agent 服务 upgrade 进程更新 agent 程序文件 upgrade 进程启动 agent 服务 upgrade 进程退出 这套机制在 Linux 下一直正常运行着。最近反馈较高概率会出现升级失败，同时伴随着 agent 离线。" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://tanlanxing.github.io:443/posts/systemd-cgroup-process-management/" /><meta property="article:section" content="posts" />
+<meta property="article:published_time" content="2025-07-12T19:59:22+08:00" />
+<meta property="article:modified_time" content="2025-07-12T19:59:22+08:00" />
+<meta itemprop="name" content="Systemd Cgroup Process Management">
+<meta itemprop="description" content="0.背景知识 cgroup cgroup (Control Group) 是 linux 内核提供的一种机制，这种机制可以根据需求把一系列系统任务及其子任务整合(或分隔)到按资源划分等级的不同组内，从而为系统资源管理提供一个统一的框架。简单说，cgroup 可以限制、记录任务组所使用的物理资源。本质上来说，cgroup 是内核附加在程序上的一系列钩子(hook)，通过程序运行时对资源的调度触发相应的钩子以达到资源追踪和限制的目的。容器所依赖的基础之一就是 cgroup，本文不做展开。
+cgroup 的设置有 3 种接口
+接口文件
+通过在挂载的 cgroup 文件系统中创建目录、文件，以及往可写文件中写入配置来实现
+cgroup 工具：cgroup-bin
+$ sudo apt install cgroup-bin $ cgexe --help systemd systemd systemd 是目前绝大多数主流 Linux 发行版的默认初始化系统，用于 Linux 系统和服务管理器，替代 initd。systemd 使用 cgroup 的层级关系来管理进程，同时 systemd 提供了 cgroups 的使用和管理接口。
+1.问题的引出 公司产品包含一个 agent 服务，运行在客户主机上。agent 实现了自动升级机制。
+Linux 下的实现如下：
+agent 服务启动升级进程 upgrade upgrade 进程通过 fork 脱离 agent 服务进程 upgrade 进程停止 agent 服务 upgrade 进程更新 agent 程序文件 upgrade 进程启动 agent 服务 upgrade 进程退出 这套机制在 Linux 下一直正常运行着。最近反馈较高概率会出现升级失败，同时伴随着 agent 离线。"><meta itemprop="datePublished" content="2025-07-12T19:59:22+08:00" />
+<meta itemprop="dateModified" content="2025-07-12T19:59:22+08:00" />
+<meta itemprop="wordCount" content="1082">
+<meta itemprop="keywords" content="Linux,systemd,cgroup," /><meta name="twitter:card" content="summary"/><meta name="twitter:title" content="Systemd Cgroup Process Management"/>
+<meta name="twitter:description" content="0.背景知识 cgroup cgroup (Control Group) 是 linux 内核提供的一种机制，这种机制可以根据需求把一系列系统任务及其子任务整合(或分隔)到按资源划分等级的不同组内，从而为系统资源管理提供一个统一的框架。简单说，cgroup 可以限制、记录任务组所使用的物理资源。本质上来说，cgroup 是内核附加在程序上的一系列钩子(hook)，通过程序运行时对资源的调度触发相应的钩子以达到资源追踪和限制的目的。容器所依赖的基础之一就是 cgroup，本文不做展开。
+cgroup 的设置有 3 种接口
+接口文件
+通过在挂载的 cgroup 文件系统中创建目录、文件，以及往可写文件中写入配置来实现
+cgroup 工具：cgroup-bin
+$ sudo apt install cgroup-bin $ cgexe --help systemd systemd systemd 是目前绝大多数主流 Linux 发行版的默认初始化系统，用于 Linux 系统和服务管理器，替代 initd。systemd 使用 cgroup 的层级关系来管理进程，同时 systemd 提供了 cgroups 的使用和管理接口。
+1.问题的引出 公司产品包含一个 agent 服务，运行在客户主机上。agent 实现了自动升级机制。
+Linux 下的实现如下：
+agent 服务启动升级进程 upgrade upgrade 进程通过 fork 脱离 agent 服务进程 upgrade 进程停止 agent 服务 upgrade 进程更新 agent 程序文件 upgrade 进程启动 agent 服务 upgrade 进程退出 这套机制在 Linux 下一直正常运行着。最近反馈较高概率会出现升级失败，同时伴随着 agent 离线。"/>
+
+	
+  </head>
+
+  <body class="ma0 avenir bg-near-white">
+
+    
+   
+  
+
+  <header>
+    <div class="bg-black">
+      <nav class="pv3 ph3 ph4-ns" role="navigation">
+  <div class="flex-l justify-between items-center center">
+    <a href="/" class="f3 fw2 hover-white no-underline white-90 dib">
+      
+        Leon 的博客
+      
+    </a>
+    <div class="flex-l items-center">
+      
+
+      
+      
+<div class="ananke-socials">
+  
+</div>
+
+    </div>
+  </div>
+</nav>
+
+    </div>
+  </header>
+
+
+
+    <main class="pb7" role="main">
+      
+  
+  <article class="flex-l flex-wrap justify-between mw8 center ph3">
+    <header class="mt4 w-100">
+      <aside class="instapaper_ignoref b helvetica tracked ttu">
+          
+        Posts
+      </aside>
+      
+
+
+
+
+
+
+
+
+
+
+  <div id="sharing" class="mt3 ananke-socials">
+    
+  </div>
+
+
+      <h1 class="f1 athelas mt3 mb1">Systemd Cgroup Process Management</h1>
+      
+      
+      
+      <time class="f6 mv4 dib tracked" datetime="2025-07-12T19:59:22+08:00">July 12, 2025</time>
+      
+
+      
+      
+    </header>
+    <div class="nested-copy-line-height lh-copy serif f4 nested-links mid-gray pr4-l w-two-thirds-l"><h1 id="0背景知识">0.背景知识</h1>
+<h2 id="cgroup">cgroup</h2>
+<p>cgroup (Control Group) 是 linux 内核提供的一种机制，这种机制可以根据需求把一系列系统任务及其子任务整合(或分隔)到按资源划分等级的不同组内，从而为系统资源管理提供一个统一的框架。简单说，cgroup 可以限制、记录任务组所使用的物理资源。本质上来说，cgroup 是内核附加在程序上的一系列钩子(hook)，通过程序运行时对资源的调度触发相应的钩子以达到资源追踪和限制的目的。容器所依赖的基础之一就是 cgroup，本文不做展开。</p>
+<p>cgroup 的设置有 3 种接口</p>
+<ol>
+<li>
+<p>接口文件</p>
+<p>通过在挂载的 cgroup 文件系统中创建目录、文件，以及往可写文件中写入配置来实现</p>
+</li>
+<li>
+<p>cgroup 工具：cgroup-bin</p>
+</li>
+</ol>
+<pre tabindex="0"><code>$ sudo apt install cgroup-bin
+$ cgexe --help
+</code></pre><ol start="3">
+<li>systemd</li>
+</ol>
+<h2 id="systemd">systemd</h2>
+<p>systemd 是目前绝大多数主流 Linux 发行版的默认初始化系统，用于 Linux 系统和服务管理器，替代 initd。systemd 使用 cgroup 的层级关系来管理进程，同时 systemd 提供了 cgroups 的使用和管理接口。</p>
+<h1 id="1问题的引出">1.问题的引出</h1>
+<p>公司产品包含一个 agent 服务，运行在客户主机上。agent 实现了自动升级机制。</p>
+<p>Linux 下的实现如下：</p>
+<ol>
+<li>agent 服务启动升级进程 upgrade</li>
+<li>upgrade 进程通过 fork 脱离 agent 服务进程</li>
+<li>upgrade 进程停止 agent 服务</li>
+<li>upgrade 进程更新 agent 程序文件</li>
+<li>upgrade 进程启动 agent 服务</li>
+<li>upgrade 进程退出</li>
+</ol>
+<p><img src="/images/posts/linux/Systemd-cgroup-process/upgrade-process.jpg" alt="upgrade process"></p>
+<p>这套机制在 Linux 下一直正常运行着。最近反馈较高概率会出现升级失败，同时伴随着 agent 离线。</p>
+<h1 id="2复现demo">2.复现Demo</h1>
+<p>老规矩，贴一下Demo:</p>
+<ul>
+<li>agent 服务的代码：/opt/debug/agent.py</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e">#!/usr/bin/env python3</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># -*- conding: utf-8 -*-</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> os
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> sys
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> time
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> signal
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> subprocess
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> logging
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> argparse
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> pathlib <span style="color:#f92672">import</span> Path
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Configure logging</span>
+</span></span><span style="display:flex;"><span>logging<span style="color:#f92672">.</span>basicConfig(
+</span></span><span style="display:flex;"><span>    level<span style="color:#f92672">=</span>logging<span style="color:#f92672">.</span>INFO,
+</span></span><span style="display:flex;"><span>    format<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;</span><span style="color:#e6db74">%(asctime)s</span><span style="color:#e6db74"> - </span><span style="color:#e6db74">%(name)s</span><span style="color:#e6db74"> - </span><span style="color:#e6db74">%(process)d</span><span style="color:#e6db74">.</span><span style="color:#e6db74">%(thread)d</span><span style="color:#e6db74"> - </span><span style="color:#e6db74">%(levelname)s</span><span style="color:#e6db74"> - </span><span style="color:#e6db74">%(message)s</span><span style="color:#e6db74">&#39;</span>,
+</span></span><span style="display:flex;"><span>    filename<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;/opt/debug/log.agent&#39;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>logger <span style="color:#f92672">=</span> logging<span style="color:#f92672">.</span>getLogger(<span style="color:#e6db74">&#39;upgrade_agent&#39;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">daemonize</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Convert the process into a daemon.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># First fork</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        pid <span style="color:#f92672">=</span> os<span style="color:#f92672">.</span>fork()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> pid <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># Exit first parent</span>
+</span></span><span style="display:flex;"><span>            sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">OSError</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Fork #1 failed: </span><span style="color:#e6db74">{</span>e<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Decouple from parent environment</span>
+</span></span><span style="display:flex;"><span>    os<span style="color:#f92672">.</span>chdir(<span style="color:#e6db74">&#39;/&#39;</span>)
+</span></span><span style="display:flex;"><span>    os<span style="color:#f92672">.</span>setsid()
+</span></span><span style="display:flex;"><span>    os<span style="color:#f92672">.</span>umask(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Second fork</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        pid <span style="color:#f92672">=</span> os<span style="color:#f92672">.</span>fork()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> pid <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># Exit second parent</span>
+</span></span><span style="display:flex;"><span>            sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">OSError</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Fork #2 failed: </span><span style="color:#e6db74">{</span>e<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Redirect standard file descriptors</span>
+</span></span><span style="display:flex;"><span>    sys<span style="color:#f92672">.</span>stdout<span style="color:#f92672">.</span>flush()
+</span></span><span style="display:flex;"><span>    sys<span style="color:#f92672">.</span>stderr<span style="color:#f92672">.</span>flush()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#39;/dev/null&#39;</span>, <span style="color:#e6db74">&#39;r&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>        os<span style="color:#f92672">.</span>dup2(f<span style="color:#f92672">.</span>fileno(), sys<span style="color:#f92672">.</span>stdin<span style="color:#f92672">.</span>fileno())
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#39;/dev/null&#39;</span>, <span style="color:#e6db74">&#39;a+&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>        os<span style="color:#f92672">.</span>dup2(f<span style="color:#f92672">.</span>fileno(), sys<span style="color:#f92672">.</span>stdout<span style="color:#f92672">.</span>fileno())
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#39;/dev/null&#39;</span>, <span style="color:#e6db74">&#39;a+&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>        os<span style="color:#f92672">.</span>dup2(f<span style="color:#f92672">.</span>fileno(), sys<span style="color:#f92672">.</span>stderr<span style="color:#f92672">.</span>fileno())
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">register_singals</span>(pid):
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Write PID file</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#39;/opt/debug/pid.agent&#39;</span>, <span style="color:#e6db74">&#39;w&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>        f<span style="color:#f92672">.</span>write(pid)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Set up signal handlers</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">cleanup</span>(signum, frame):
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Received signal </span><span style="color:#e6db74">%d</span><span style="color:#e6db74"> to terminate&#34;</span>, signum)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>            os<span style="color:#f92672">.</span>remove(<span style="color:#e6db74">&#39;/opt/debug/pid.agent&#39;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">except</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span>        sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    signal<span style="color:#f92672">.</span>signal(signal<span style="color:#f92672">.</span>SIGTERM, cleanup)
+</span></span><span style="display:flex;"><span>    signal<span style="color:#f92672">.</span>signal(signal<span style="color:#f92672">.</span>SIGINT, cleanup)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">check_and_upgrade</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Check for upgrade file and execute upgrade if it exists.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    upgrade_file <span style="color:#f92672">=</span> Path(<span style="color:#e6db74">&#39;/opt/debug/upgrade.start&#39;</span>)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> <span style="color:#66d9ef">True</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> upgrade_file<span style="color:#f92672">.</span>exists():
+</span></span><span style="display:flex;"><span>                logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Upgrade file detected, starting upgrade process&#34;</span>)
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e"># Remove the upgrade file after successful execution</span>
+</span></span><span style="display:flex;"><span>                upgrade_file<span style="color:#f92672">.</span>unlink()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>                    <span style="color:#75715e"># Execute upgrade command</span>
+</span></span><span style="display:flex;"><span>                    result <span style="color:#f92672">=</span> subprocess<span style="color:#f92672">.</span>run([<span style="color:#e6db74">&#39;/usr/bin/python3&#39;</span>, <span style="color:#e6db74">&#39;/opt/debug/upgrade.py&#39;</span>, <span style="color:#e6db74">&#39;-d&#39;</span>], 
+</span></span><span style="display:flex;"><span>                                         capture_output<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>, 
+</span></span><span style="display:flex;"><span>                                         text<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>, 
+</span></span><span style="display:flex;"><span>                                         check<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>)
+</span></span><span style="display:flex;"><span>                    <span style="color:#66d9ef">if</span> result<span style="color:#f92672">.</span>returncode <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span>:
+</span></span><span style="display:flex;"><span>                        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Upgrade process start failed: </span><span style="color:#e6db74">{</span>result<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">except</span> subprocess<span style="color:#f92672">.</span>CalledProcessError <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>                    logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Upgrade failed: </span><span style="color:#e6db74">{</span>e<span style="color:#f92672">.</span>stderr<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>                    logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Error during upgrade: </span><span style="color:#e6db74">{</span>str(e)<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>            time<span style="color:#f92672">.</span>sleep(<span style="color:#ae81ff">0.5</span>)  <span style="color:#75715e"># Sleep for 500 milliseconds</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>            logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Error in main loop: </span><span style="color:#e6db74">{</span>str(e)<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>            time<span style="color:#f92672">.</span>sleep(<span style="color:#ae81ff">0.5</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">main</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Main function to start the agent process.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Parse command line arguments</span>
+</span></span><span style="display:flex;"><span>    parser <span style="color:#f92672">=</span> argparse<span style="color:#f92672">.</span>ArgumentParser(description<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;Agent process for upgrade monitoring&#39;</span>)
+</span></span><span style="display:flex;"><span>    parser<span style="color:#f92672">.</span>add_argument(<span style="color:#e6db74">&#39;-d&#39;</span>, <span style="color:#e6db74">&#39;--daemon&#39;</span>, action<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;store_true&#39;</span>,
+</span></span><span style="display:flex;"><span>                      help<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;Run in daemon mode&#39;</span>)
+</span></span><span style="display:flex;"><span>    args <span style="color:#f92672">=</span> parser<span style="color:#f92672">.</span>parse_args()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Starting agent process&#34;</span>)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> args<span style="color:#f92672">.</span>daemon:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Running in daemon mode&#34;</span>)
+</span></span><span style="display:flex;"><span>        daemonize()
+</span></span><span style="display:flex;"><span>        pid <span style="color:#f92672">=</span> str(os<span style="color:#f92672">.</span>getpid())
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Agent daemon started with PID: </span><span style="color:#e6db74">{</span>pid<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>        pid <span style="color:#f92672">=</span> str(os<span style="color:#f92672">.</span>getpid())
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Running in foreground mode with PID: </span><span style="color:#e6db74">{</span>pid<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    register_singals(pid)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    check_and_upgrade()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> __name__ <span style="color:#f92672">==</span> <span style="color:#e6db74">&#39;__main__&#39;</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        main() 
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">SystemExit</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span>:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>exception(<span style="color:#e6db74">&#34;&#34;</span>)
+</span></span></code></pre></div><ul>
+<li>systemd service 文件：agent.service</li>
+</ul>
+<pre tabindex="0"><code>[Unit]
+Description=Agent Service
+After=network.target
+
+[Service]
+Type=forking
+WorkingDirectory=/opt/debug
+ExecStart=/usr/bin/python3 /opt/debug/agent.py -d
+PIDFile=/opt/debug/pid.agent
+
+[Install]
+WantedBy=multi-user.target 
+</code></pre><ul>
+<li>更新进程的代码：/opt/debug/upgrade.py</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e">#!/usr/bin/env python3</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># -*- conding: utf-8 -*-</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> os
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> sys
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> time
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> signal
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> logging
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> subprocess
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> argparse
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> pathlib <span style="color:#f92672">import</span> Path
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Configure logging</span>
+</span></span><span style="display:flex;"><span>logging<span style="color:#f92672">.</span>basicConfig(
+</span></span><span style="display:flex;"><span>    level<span style="color:#f92672">=</span>logging<span style="color:#f92672">.</span>INFO,
+</span></span><span style="display:flex;"><span>    format<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;</span><span style="color:#e6db74">%(asctime)s</span><span style="color:#e6db74"> - </span><span style="color:#e6db74">%(name)s</span><span style="color:#e6db74"> - </span><span style="color:#e6db74">%(process)d</span><span style="color:#e6db74">.</span><span style="color:#e6db74">%(thread)d</span><span style="color:#e6db74"> - </span><span style="color:#e6db74">%(levelname)s</span><span style="color:#e6db74"> - </span><span style="color:#e6db74">%(message)s</span><span style="color:#e6db74">&#39;</span>,
+</span></span><span style="display:flex;"><span>    filename<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;/opt/debug/log.upgrade&#39;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>logger <span style="color:#f92672">=</span> logging<span style="color:#f92672">.</span>getLogger(<span style="color:#e6db74">&#39;upgrade_process&#39;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">daemonize</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Convert the process into a daemon.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># First fork</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        pid <span style="color:#f92672">=</span> os<span style="color:#f92672">.</span>fork()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> pid <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># Exit first parent</span>
+</span></span><span style="display:flex;"><span>            sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">OSError</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Fork #1 failed: </span><span style="color:#e6db74">{</span>e<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Decouple from parent environment</span>
+</span></span><span style="display:flex;"><span>    os<span style="color:#f92672">.</span>chdir(<span style="color:#e6db74">&#39;/&#39;</span>)
+</span></span><span style="display:flex;"><span>    os<span style="color:#f92672">.</span>setsid()
+</span></span><span style="display:flex;"><span>    os<span style="color:#f92672">.</span>umask(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Second fork</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        pid <span style="color:#f92672">=</span> os<span style="color:#f92672">.</span>fork()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> pid <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>:
+</span></span><span style="display:flex;"><span>            
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># Exit second parent</span>
+</span></span><span style="display:flex;"><span>            sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">OSError</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Fork #2 failed: </span><span style="color:#e6db74">{</span>e<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Redirect standard file descriptors</span>
+</span></span><span style="display:flex;"><span>    sys<span style="color:#f92672">.</span>stdout<span style="color:#f92672">.</span>flush()
+</span></span><span style="display:flex;"><span>    sys<span style="color:#f92672">.</span>stderr<span style="color:#f92672">.</span>flush()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#39;/dev/null&#39;</span>, <span style="color:#e6db74">&#39;r&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>        os<span style="color:#f92672">.</span>dup2(f<span style="color:#f92672">.</span>fileno(), sys<span style="color:#f92672">.</span>stdin<span style="color:#f92672">.</span>fileno())
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#39;/dev/null&#39;</span>, <span style="color:#e6db74">&#39;a+&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>        os<span style="color:#f92672">.</span>dup2(f<span style="color:#f92672">.</span>fileno(), sys<span style="color:#f92672">.</span>stdout<span style="color:#f92672">.</span>fileno())
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#39;/dev/null&#39;</span>, <span style="color:#e6db74">&#39;a+&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>        os<span style="color:#f92672">.</span>dup2(f<span style="color:#f92672">.</span>fileno(), sys<span style="color:#f92672">.</span>stderr<span style="color:#f92672">.</span>fileno())
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">trace_upgrade</span>(pid):
+</span></span><span style="display:flex;"><span>    cpid <span style="color:#f92672">=</span> os<span style="color:#f92672">.</span>fork()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> cpid <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>:
+</span></span><span style="display:flex;"><span>        sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Starting trace&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        result <span style="color:#f92672">=</span> subprocess<span style="color:#f92672">.</span>run([<span style="color:#e6db74">&#39;strace&#39;</span>, <span style="color:#e6db74">&#39;-tt&#39;</span>, <span style="color:#e6db74">&#39;-ff&#39;</span>, <span style="color:#e6db74">&#39;-s&#39;</span>, <span style="color:#e6db74">&#39;1024&#39;</span>, <span style="color:#e6db74">&#39;-y&#39;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#39;-o&#39;</span>, <span style="color:#e6db74">&#39;/opt/debug/upgrade.trace&#39;</span>, <span style="color:#e6db74">&#39;-p&#39;</span>, str(pid)], 
+</span></span><span style="display:flex;"><span>                                     capture_output<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>, 
+</span></span><span style="display:flex;"><span>                                     text<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>, 
+</span></span><span style="display:flex;"><span>                                     check<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>)
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;trace successfully: </span><span style="color:#e6db74">{</span>result<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Error trace: </span><span style="color:#e6db74">{</span>str(e)<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">perform_upgrade</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Perform the upgrade process by stopping and restarting the agent.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    pid_file <span style="color:#f92672">=</span> Path(<span style="color:#e6db74">&#39;/opt/debug/pid.agent&#39;</span>)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># Read agent PID</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> pid_file<span style="color:#f92672">.</span>exists():
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">with</span> open(pid_file, <span style="color:#e6db74">&#39;r&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>                agent_pid <span style="color:#f92672">=</span> int(f<span style="color:#f92672">.</span>read()<span style="color:#f92672">.</span>strip())
+</span></span><span style="display:flex;"><span>            
+</span></span><span style="display:flex;"><span>            logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Stopping agent process (PID: </span><span style="color:#e6db74">{</span>agent_pid<span style="color:#e6db74">}</span><span style="color:#e6db74">)&#34;</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e"># Send SIGTERM to agent</span>
+</span></span><span style="display:flex;"><span>                os<span style="color:#f92672">.</span>kill(agent_pid, signal<span style="color:#f92672">.</span>SIGTERM)
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e"># Wait for process to terminate</span>
+</span></span><span style="display:flex;"><span>                os<span style="color:#f92672">.</span>waitpid(agent_pid, <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">ProcessLookupError</span>:
+</span></span><span style="display:flex;"><span>                logger<span style="color:#f92672">.</span>warning(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Agent process </span><span style="color:#e6db74">{</span>agent_pid<span style="color:#e6db74">}</span><span style="color:#e6db74"> not found&#34;</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>                logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Error stopping agent: </span><span style="color:#e6db74">{</span>str(e)<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>            logger<span style="color:#f92672">.</span>warning(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;agent pid not found&#34;</span>)
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># Sleep for 2 seconds</span>
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Waiting for 2 seconds before restarting agent&#34;</span>)
+</span></span><span style="display:flex;"><span>        time<span style="color:#f92672">.</span>sleep(<span style="color:#ae81ff">2</span>)
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># Start agent process</span>
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Starting agent process&#34;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>            result <span style="color:#f92672">=</span> subprocess<span style="color:#f92672">.</span>run([<span style="color:#e6db74">&#39;/usr/bin/python3&#39;</span>, <span style="color:#e6db74">&#39;/opt/debug/agent.py&#39;</span>, <span style="color:#e6db74">&#39;-d&#39;</span>], 
+</span></span><span style="display:flex;"><span>                                         capture_output<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>, 
+</span></span><span style="display:flex;"><span>                                         text<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>, 
+</span></span><span style="display:flex;"><span>                                         check<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>)
+</span></span><span style="display:flex;"><span>            logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Agent process started successfully: </span><span style="color:#e6db74">{</span>result<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>            logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Error starting agent: </span><span style="color:#e6db74">{</span>str(e)<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>            
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>error(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Error during upgrade process: </span><span style="color:#e6db74">{</span>str(e)<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">finally</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># Exit the upgrade process</span>
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Upgrade process completed, exiting&#34;</span>)
+</span></span><span style="display:flex;"><span>        sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">main</span>():
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;&#34;Main function to start the upgrade process.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Parse command line arguments</span>
+</span></span><span style="display:flex;"><span>    parser <span style="color:#f92672">=</span> argparse<span style="color:#f92672">.</span>ArgumentParser(description<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;Upgrade process for agent&#39;</span>)
+</span></span><span style="display:flex;"><span>    parser<span style="color:#f92672">.</span>add_argument(<span style="color:#e6db74">&#39;-d&#39;</span>, <span style="color:#e6db74">&#39;--daemon&#39;</span>, action<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;store_true&#39;</span>,
+</span></span><span style="display:flex;"><span>                      help<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;Run in daemon mode&#39;</span>)
+</span></span><span style="display:flex;"><span>    args <span style="color:#f92672">=</span> parser<span style="color:#f92672">.</span>parse_args()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Starting upgrade process&#34;</span>)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> args<span style="color:#f92672">.</span>daemon:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Running in daemon mode&#34;</span>)
+</span></span><span style="display:flex;"><span>        daemonize()
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># Write PID file</span>
+</span></span><span style="display:flex;"><span>        pid <span style="color:#f92672">=</span> str(os<span style="color:#f92672">.</span>getpid())
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#39;/opt/debug/pid.upgrade&#39;</span>, <span style="color:#e6db74">&#39;w&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>            f<span style="color:#f92672">.</span>write(pid)
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># Set up signal handler for cleanup</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">cleanup</span>(signum, frame):
+</span></span><span style="display:flex;"><span>            logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Received signal to terminate&#34;</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>                os<span style="color:#f92672">.</span>remove(<span style="color:#e6db74">&#39;/opt/debug/pid.upgrade&#39;</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">except</span>:
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span>            sys<span style="color:#f92672">.</span>exit(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        signal<span style="color:#f92672">.</span>signal(signal<span style="color:#f92672">.</span>SIGTERM, cleanup)
+</span></span><span style="display:flex;"><span>        signal<span style="color:#f92672">.</span>signal(signal<span style="color:#f92672">.</span>SIGINT, cleanup)
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Upgrade daemon started with PID: </span><span style="color:#e6db74">{</span>pid<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>info(<span style="color:#e6db74">&#34;Running in foreground mode&#34;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    perform_upgrade()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> __name__ <span style="color:#f92672">==</span> <span style="color:#e6db74">&#39;__main__&#39;</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>        main()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span> <span style="color:#a6e22e">SystemExit</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">except</span>:
+</span></span><span style="display:flex;"><span>        logger<span style="color:#f92672">.</span>exception(<span style="color:#e6db74">&#34;&#34;</span>)
+</span></span></code></pre></div><p>agent 服务启动后，创建 /opt/debug/upgrade.start 文件，就会执行更新流程。</p>
+<h1 id="3分析">3.分析</h1>
+<p>通过日志可以确定：upgrade 进程起来了，发出了停止 agent 服务的指令，agent 服务正常停止，接下来 upgrade 进程应该打一条日制，但奇怪的是这条日志没有打，upgrade 进程也已经不存在了。</p>
+<p>找了个有 10 个 agent 左右的环境，很容易就复现出来了。对于容易复现的问题，能解决的希望还是很大的。</p>
+<p>进程突然异常退出，两个怀疑方向：进程崩溃、被 kill 掉。</p>
+<p>打开 core dump，复现后没有产生 core 文件，暂时排除崩溃这个可能。</p>
+<p>如果是被 kill 掉，需要找到发送 kill 信号的进程。</p>
+<h2 id="信号跟踪">信号跟踪</h2>
+<p>需要知道是哪个进程向哪个进程发送了什么信号，有两种方式：audit、systemtap。</p>
+<p>幸运的是，系统启用了 audit，操作起来就简单了。</p>
+<h3 id="audit">audit</h3>
+<ul>
+<li>添加规则</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>$ sudo auditctl -a exit,always -F arch<span style="color:#f92672">=</span>b64 -S kill -k kill_signals
+</span></span></code></pre></div><ul>
+<li>复现</li>
+<li>查看审计日志</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>$ sudo ausearch -sc kill
+</span></span></code></pre></div><p>重新复现仔细分析了几遍，upgrade 停止 agent 服务发出的信号记录的清清晰晰的，向 upgrade 发出的信号找不到丝毫踪迹。
+难道不是被 kill 的？</p>
+<h2 id="syscall-追踪">syscall 追踪</h2>
+<p>既不是崩溃，也不是被 kill，先 trace 一下看看。</p>
+<h3 id="自动trace">自动trace</h3>
+<p>为了尽可能少的改变原来的行为，upgrade 进程 fork 后，子进程（姑且称之为 upgrade-main 进程）暂停，父进程再 fork 一个进程（姑且称之为 upgrade-trace 进程），父进程退出。upgrade-trace 进程启动 strace upgrade-main进程后，upgrade-main 进程继续往下执行。</p>
+<p><img src="/images/posts/linux/Systemd-cgroup-process/upgrace-trace.jpg" alt="upgrade trace"></p>
+<p>复现的结果是，strace 进程跟 upgrade 进程一样，莫名其妙的一起异常退出了，没记录到 upgrade 退出的关键信息。重新复现了几次还是如此。诡异得匪夷所思。看来 upgrade 中确实有一股神秘力量在作祟。
+在 upgrade 父进程 fork 后启动 strace，主要是考虑这样在时间上影响很小，能更接近故障的场景。既然毫无所获，那就索性不再顾及。</p>
+<h3 id="手动trace">手动trace</h3>
+<p>upgrade 进程 fork 后，子进程（ upgrade-main 进程）暂停，父进程退出；手动启动 strace，然后通知 upgrade-main 进程继续往下执行。</p>
+<p><img src="/images/posts/linux/Systemd-cgroup-process/user-trace.jpg" alt="user strace"></p>
+<p>手动 strace 完整的记录了 upgrade-main 进程的退出过程，它确实是被 kill 掉的，不过 kill 它的进程有点特殊</p>
+<pre tabindex="0"><code>--- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=1, si_uid=0} ---
+--- SIGCONT {si_signo=SIGCONT, si_code=SI_USER, si_pid=1, si_uid=0} ---
+</code></pre><p><code>{si_signo=SIGTERM, si_code=SI_USER, si_pid=1, si_uid=0}</code> 是 siginfo_t 结构体，用于描述向进程发送的信号信息，其中 si_signo 是信号码，si_pid 是信号发送进程的 pid。发出 kill 信号的是系统 1 号进程！系统使用 systemd 初始化系统。systemd 为什么要 kill 掉 upgrade 进程呢？</p>
+<h1 id="4端倪">4.端倪</h1>
+<p>突然间想到，在不久前，agent 服务从使用 init 方式管理换成了 systemd。systemd 使用 cgroup 层级关系来管理服务进程。upgrade 进程虽然通过两次 fork 脱离了 agent 进程，但如果他们依然同属于一个 cgroup，systemd 就会因为 agent 进程退出判断 agent 服务结束，从而把同属于 agent 所在 cgroup 的所有进程全部杀死。</p>
+<p><img src="/images/posts/linux/Systemd-cgroup-process/cgroup.png" alt="image-20250713173212707"></p>
+<p>确实如此！这也解释了为什么<strong>自动trace</strong> 时，strace 进程也莫名其妙的提前退出，因为它也同属于一个 cgroup，被 systemd 杀掉了。</p>
+<p>不使用 systemd 管理，看效果时怎么样的。</p>
+<p>执行<code>/usr/bin/python3 /opt/debug/agent.py -d</code> ，agent 以守护进程方式运行。</p>
+<p><img src="/images/posts/linux/Systemd-cgroup-process/image-20250713174446596.png" alt="image-20250713174446596"></p>
+<p>虽然它们也同属于一个 cgroup，但不是通过 systemd 来管理的，systemd 不会干预 agent 进程及其所在 cgroup。升级得以正常进行，顺利拉起 agent 进程。</p>
+<h1 id="5解决方案">5.解决方案</h1>
+<p>原因找到了，解决方案也就清晰了，让 upgrade 进程的 cgroup 跟 agent 进程不一样就行了。</p>
+<p>由父进程创建的进程默认从属于父进程的 cgroup。sysytemd 提供了一个命令<code>systemd-run</code> ，可以改变这个行为:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>systemd-run --scope &lt;command&gt;
+</span></span></code></pre></div><p>systemd 会创建一个临时的 cgroup，用于运行这个命令。</p>
+<p><img src="/images/posts/linux/Systemd-cgroup-process/image-20250713180105552.png" alt="image-20250713180105552"></p>
+<p>问题解决！</p>
+<h1 id="6后记">6.后记</h1>
+<p>在使用 audit 追踪信号时，为什么没有记录到 systemd 发出的 kill 信号呢？</p>
+<p>各大模型请教了一遍，又查阅了一番资料，大致意思是，systemd 会很频繁的发出 kill 信号，如果 audit 都记录下来，内容会很冗长，所以默认是不记录 systemd 发出的信号的。</p>
+<p>其中的具体实现也不甚清楚，后面有时间了再深入研究罢！</p>
+<ul class="pa0">
+  
+   <li class="list di">
+     <a href="/tags/linux/" class="link f5 grow no-underline br-pill ba ph3 pv2 mb2 dib black sans-serif">Linux</a>
+   </li>
+  
+   <li class="list di">
+     <a href="/tags/systemd/" class="link f5 grow no-underline br-pill ba ph3 pv2 mb2 dib black sans-serif">Systemd</a>
+   </li>
+  
+   <li class="list di">
+     <a href="/tags/cgroup/" class="link f5 grow no-underline br-pill ba ph3 pv2 mb2 dib black sans-serif">Cgroup</a>
+   </li>
+  
+</ul>
+<div class="mt6 instapaper_ignoref">
+      
+      
+      </div>
+    </div>
+
+    <aside class="w-30-l mt6-l">
+
+
+
+
+</aside>
+
+  </article>
+
+    </main>
+    <footer class="bg-black bottom-0 w-100 pa3" role="contentinfo">
+  <div class="flex justify-between">
+  <a class="f4 fw4 hover-white no-underline white-70 dn dib-ns pv2 ph3" href="https://tanlanxing.github.io:443/" >
+    &copy;  Leon 的博客 2025 
+  </a>
+    <div>
+<div class="ananke-socials">
+  
+</div>
+</div>
+  </div>
+</footer>
+
+  </body>
+</html>

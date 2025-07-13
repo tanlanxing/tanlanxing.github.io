@@ -6,8 +6,29 @@
     <description>Recent content in Tags on Leon 的博客</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Fri, 26 Jul 2024 21:59:44 +0800</lastBuildDate>
+    <lastBuildDate>Sat, 12 Jul 2025 19:59:22 +0800</lastBuildDate>
     <atom:link href="https://tanlanxing.github.io:443/tags/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Cgroup</title>
+      <link>https://tanlanxing.github.io:443/tags/cgroup/</link>
+      <pubDate>Sat, 12 Jul 2025 19:59:22 +0800</pubDate>
+      <guid>https://tanlanxing.github.io:443/tags/cgroup/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Linux</title>
+      <link>https://tanlanxing.github.io:443/tags/linux/</link>
+      <pubDate>Sat, 12 Jul 2025 19:59:22 +0800</pubDate>
+      <guid>https://tanlanxing.github.io:443/tags/linux/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Systemd</title>
+      <link>https://tanlanxing.github.io:443/tags/systemd/</link>
+      <pubDate>Sat, 12 Jul 2025 19:59:22 +0800</pubDate>
+      <guid>https://tanlanxing.github.io:443/tags/systemd/</guid>
+      <description></description>
+    </item>
     <item>
       <title>Fork</title>
       <link>https://tanlanxing.github.io:443/tags/fork/</link>

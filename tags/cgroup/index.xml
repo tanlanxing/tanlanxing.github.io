@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Cgroup on Leon 的博客</title>
+    <link>https://tanlanxing.github.io:443/tags/cgroup/</link>
+    <description>Recent content in Cgroup on Leon 的博客</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh-cn</language>
+    <lastBuildDate>Sat, 12 Jul 2025 19:59:22 +0800</lastBuildDate>
+    <atom:link href="https://tanlanxing.github.io:443/tags/cgroup/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Systemd Cgroup Process Management</title>
+      <link>https://tanlanxing.github.io:443/posts/systemd-cgroup-process-management/</link>
+      <pubDate>Sat, 12 Jul 2025 19:59:22 +0800</pubDate>
+      <guid>https://tanlanxing.github.io:443/posts/systemd-cgroup-process-management/</guid>
+      <description>0.背景知识 cgroup cgroup (Control Group) 是 linux 内核提供的一种机制，这种机制可以根据需求把一系列系统任务及其子任务整合(或分隔)到按资源划分等级的不同组内，从而为系统资源管理提供一个统一的框架。简单说，cgroup 可以限制、记录任务组所使用的物理资源。本质上来说，cgroup 是内核附加在程序上的一系列钩子(hook)，通过程序运行时对资源的调度触发相应的钩子以达到资源追踪和限制的目的。容器所依赖的基础之一就是 cgroup，本文不做展开。&#xA;cgroup 的设置有 3 种接口&#xA;接口文件&#xA;通过在挂载的 cgroup 文件系统中创建目录、文件，以及往可写文件中写入配置来实现&#xA;cgroup 工具：cgroup-bin&#xA;$ sudo apt install cgroup-bin $ cgexe --help systemd systemd systemd 是目前绝大多数主流 Linux 发行版的默认初始化系统，用于 Linux 系统和服务管理器，替代 initd。systemd 使用 cgroup 的层级关系来管理进程，同时 systemd 提供了 cgroups 的使用和管理接口。&#xA;1.问题的引出 公司产品包含一个 agent 服务，运行在客户主机上。agent 实现了自动升级机制。&#xA;Linux 下的实现如下：&#xA;agent 服务启动升级进程 upgrade upgrade 进程通过 fork 脱离 agent 服务进程 upgrade 进程停止 agent 服务 upgrade 进程更新 agent 程序文件 upgrade 进程启动 agent 服务 upgrade 进程退出 这套机制在 Linux 下一直正常运行着。最近反馈较高概率会出现升级失败，同时伴随着 agent 离线。</description>
+    </item>
+  </channel>
+</rss>
